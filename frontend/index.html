@@ -1,1 +1,78 @@
-<script src="scripts/main.js"></script>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FacelessBook | Connect & Share</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div id="app">
+        <!-- Auth Section -->
+        <section id="auth-section" class="hidden">
+            <div class="glass-card">
+                <h1>FacelessBook</h1>
+                <p>Connect with the world around you.</p>
+                <div id="login-form">
+                    <input type="email" id="login-email" placeholder="Email" required>
+                    <input type="password" id="login-password" placeholder="Password" required>
+                    <button id="login-btn" class="primary-btn">Log In</button>
+                    <hr>
+                    <button id="show-register-btn" class="secondary-btn">Create New Account</button>
+                </div>
+                <div id="register-form" class="hidden">
+                    <input type="text" id="reg-username" placeholder="Username" required>
+                    <input type="email" id="reg-email" placeholder="Email" required>
+                    <input type="password" id="reg-password" placeholder="Password" required>
+                    <button id="register-btn" class="primary-btn">Sign Up</button>
+                    <hr>
+                    <button id="show-login-btn" class="secondary-btn">Already have an account?</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Main App Section -->
+        <section id="main-section" class="hidden">
+            <nav class="navbar">
+                <div class="nav-content">
+                    <span class="logo">FacelessBook</span>
+                    <div class="user-info">
+                        <span id="nav-username"></span>
+                        <button id="logout-btn">Log Out</button>
+                    </div>
+                </div>
+            </nav>
+
+            <main class="container">
+                <div class="sidebar left-sidebar">
+                    <ul>
+                        <li><a href="#">🏠 Feed</a></li>
+                        <li><a href="#">👥 Friends</a></li>
+                        <li><a href="#">💬 Messages</a></li>
+                        <li><a href="#">⚙️ Settings</a></li>
+                    </ul>
+                </div>
+
+                <div class="feed-section">
+                    <div class="create-post glass-card">
+                        <textarea id="post-content" placeholder="What's on your mind?"></textarea>
+                        <button id="create-post-btn" class="primary-btn">Post</button>
+                    </div>
+                    <div id="posts-container">
+                        <!-- Posts will be injected here -->
+                    </div>
+                </div>
+
+                <div class="sidebar right-sidebar">
+                    <h3>Friends</h3>
+                    <div id="friends-list">
+                        <p>No friends yet. Add some!</p>
+                    </div>
+                </div>
+            </main>
+        </section>
+    </div>
+    <script src="main.js"></script>
+</body>
+</html>

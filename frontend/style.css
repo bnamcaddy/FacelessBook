@@ -1,0 +1,263 @@
+:root {
+    --primary-color: #1877f2;
+    --primary-hover: #166fe5;
+    --bg-gradient: linear-gradient(135deg, #f0f2f5 0%, #e7e9ed 100%);
+    --glass-bg: rgba(255, 255, 255, 0.7);
+    --glass-border: rgba(255, 255, 255, 0.3);
+    --text-main: #1c1e21;
+    --text-muted: #65676b;
+    --shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.07);
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    font-family: 'Outfit', sans-serif;
+}
+
+body {
+    background: var(--bg-gradient);
+    min-height: 100vh;
+    color: var(--text-main);
+    overflow-x: hidden;
+}
+
+.hidden {
+    display: none !important;
+}
+
+.glass-card {
+    background: var(--glass-bg);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid var(--glass-border);
+    border-radius: 12px;
+    box-shadow: var(--shadow);
+    padding: 20px;
+}
+
+/* Auth Section */
+#auth-section {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+}
+
+#auth-section .glass-card {
+    width: 400px;
+    text-align: center;
+    padding: 40px;
+}
+
+#auth-section h1 {
+    color: var(--primary-color);
+    font-size: 2.5rem;
+    margin-bottom: 10px;
+}
+
+#auth-section p {
+    margin-bottom: 30px;
+    color: var(--text-muted);
+}
+
+input {
+    width: 100%;
+    padding: 12px;
+    margin-bottom: 15px;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    font-size: 1rem;
+    outline: none;
+    transition: border-color 0.3s;
+}
+
+input:focus {
+    border-color: var(--primary-color);
+}
+
+button {
+    width: 100%;
+    padding: 12px;
+    border: none;
+    border-radius: 8px;
+    font-size: 1.1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.2s, background 0.3s;
+}
+
+button:active {
+    transform: scale(0.98);
+}
+
+.primary-btn {
+    background: var(--primary-color);
+    color: white;
+}
+
+.primary-btn:hover {
+    background: var(--primary-hover);
+}
+
+.secondary-btn {
+    background: #42b72a;
+    color: white;
+    margin-top: 10px;
+}
+
+.secondary-btn:hover {
+    background: #36a420;
+}
+
+hr {
+    margin: 20px 0;
+    border: 0;
+    border-top: 1px solid #ddd;
+}
+
+/* Main Section */
+.navbar {
+    background: var(--glass-bg);
+    backdrop-filter: blur(10px);
+    height: 60px;
+    position: sticky;
+    top: 0;
+    z-index: 1000;
+    border-bottom: 1px solid var(--glass-border);
+    box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+}
+
+.nav-content {
+    max-width: 1200px;
+    margin: 0 auto;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    height: 100%;
+    padding: 0 20px;
+}
+
+.logo {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--primary-color);
+}
+
+.user-info {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+#logout-btn {
+    width: auto;
+    padding: 5px 15px;
+    font-size: 0.9rem;
+    background: #eee;
+    color: var(--text-main);
+}
+
+.container {
+    max-width: 1200px;
+    margin: 20px auto;
+    display: grid;
+    grid-template-columns: 280px 1fr 280px;
+    gap: 20px;
+    padding: 0 20px;
+}
+
+.sidebar ul {
+    list-style: none;
+}
+
+.sidebar li {
+    margin-bottom: 10px;
+}
+
+.sidebar a {
+    text-decoration: none;
+    color: var(--text-main);
+    font-weight: 500;
+    display: block;
+    padding: 10px;
+    border-radius: 8px;
+    transition: background 0.2s;
+}
+
+.sidebar a:hover {
+    background: rgba(0,0,0,0.05);
+}
+
+.create-post {
+    margin-bottom: 20px;
+}
+
+textarea {
+    width: 100%;
+    height: 100px;
+    padding: 15px;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    resize: none;
+    font-size: 1rem;
+    margin-bottom: 10px;
+    outline: none;
+}
+
+/* Post Styling */
+.post {
+    margin-bottom: 20px;
+    animation: fadeIn 0.5s ease-out;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.post-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 15px;
+}
+
+.post-user {
+    font-weight: 600;
+}
+
+.post-content {
+    margin-bottom: 15px;
+    line-height: 1.5;
+}
+
+.post-actions {
+    display: flex;
+    gap: 15px;
+    border-top: 1px solid #eee;
+    padding-top: 15px;
+}
+
+.action-btn {
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    padding: 5px 10px;
+    width: auto;
+}
+
+.action-btn:hover {
+    background: rgba(0,0,0,0.05);
+}
+
+/* Responsive */
+@media (max-width: 992px) {
+    .container {
+        grid-template-columns: 1fr;
+    }
+    .sidebar {
+        display: none;
+    }
+}
