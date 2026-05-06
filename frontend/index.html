@@ -1,19 +1,29 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <!-- Document Metadata -->
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FacelessBook | Connect & Share</title>
+    
+    <!-- Link to external CSS stylesheet for styling the application -->
     <link rel="stylesheet" href="style.css">
+    
+    <!-- Import 'Outfit' font from Google Fonts for a modern look -->
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
 </head>
 <body>
+    <!-- Main application wrapper -->
     <div id="app">
-        <!-- Auth Section -->
+        
+        <!-- Authentication Section: Handles Login and Registration -->
+        <!-- Initially hidden; toggled by main.js based on auth state -->
         <section id="auth-section" class="hidden">
             <div class="glass-card">
                 <h1>FacelessBook</h1>
                 <p>Connect with the world around you.</p>
+                
+                <!-- Login Form Structure -->
                 <div id="login-form">
                     <input type="email" id="login-email" placeholder="Email" required>
                     <input type="password" id="login-password" placeholder="Password" required>
@@ -21,6 +31,8 @@
                     <hr>
                     <button id="show-register-btn" class="secondary-btn">Create New Account</button>
                 </div>
+                
+                <!-- Registration Form Structure (Initially hidden) -->
                 <div id="register-form" class="hidden">
                     <input type="text" id="reg-username" placeholder="Username" required>
                     <input type="email" id="reg-email" placeholder="Email" required>
@@ -32,19 +44,24 @@
             </div>
         </section>
 
-        <!-- Main App Section -->
+        <!-- Main Application Section: The news feed and user interface -->
+        <!-- Initially hidden; shown only after successful login -->
         <section id="main-section" class="hidden">
+            <!-- Navigation bar at the top -->
             <nav class="navbar">
                 <div class="nav-content">
                     <span class="logo">FacelessBook</span>
                     <div class="user-info">
+                        <!-- Displays the logged-in user's name -->
                         <span id="nav-username"></span>
                         <button id="logout-btn">Log Out</button>
                     </div>
                 </div>
             </nav>
 
+            <!-- Main content container with sidebars and feed -->
             <main class="container">
+                <!-- Left Sidebar: Navigation links -->
                 <div class="sidebar left-sidebar">
                     <ul>
                         <li><a href="#">🏠 Feed</a></li>
@@ -54,25 +71,32 @@
                     </ul>
                 </div>
 
+                <!-- Center Section: Post creation and News Feed -->
                 <div class="feed-section">
+                    <!-- Text area for creating a new post -->
                     <div class="create-post glass-card">
                         <textarea id="post-content" placeholder="What's on your mind?"></textarea>
                         <button id="create-post-btn" class="primary-btn">Post</button>
                     </div>
+                    <!-- Dynamic container where posts will be rendered -->
                     <div id="posts-container">
-                        <!-- Posts will be injected here -->
+                        <!-- Posts will be injected here by JavaScript -->
                     </div>
                 </div>
 
+                <!-- Right Sidebar: Friends list -->
                 <div class="sidebar right-sidebar">
                     <h3>Friends</h3>
                     <div id="friends-list">
+                        <!-- Friend list items will be injected here by JavaScript -->
                         <p>No friends yet. Add some!</p>
                     </div>
                 </div>
             </main>
         </section>
     </div>
+    
+    <!-- Link to external JavaScript file for application logic -->
     <script src="main.js"></script>
 </body>
 </html>

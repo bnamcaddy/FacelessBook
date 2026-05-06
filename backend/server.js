@@ -1,18 +1,22 @@
-const express = require('express');
-const cors = require('cors');
-const { Pool } = require('pg');
-const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
-require('dotenv').config();
+// Import required modules
+const express = require('express'); // Web framework for Node.js
+const cors = require('cors'); // Middleware to enable Cross-Origin Resource Sharing
+const { Pool } = require('pg'); // PostgreSQL client for Node.js
+const bcrypt = require('bcryptjs'); // Library for hashing passwords
+const jwt = require('jsonwebtoken'); // Library for creating and verifying JSON Web Tokens
+require('dotenv').config(); // Load environment variables from a .env file
 
+// Initialize the Express application
 const app = express();
+// Define the port the server will listen on, using environment variable or default to 5000
 const PORT = process.env.PORT || 5000;
 
-// Middleware
-app.use(cors());
-app.use(express.json());
+// Middleware configuration
+app.use(cors()); // Allow cross-origin requests from the frontend
+app.use(express.json()); // Parse incoming JSON requests
 
-// DB Connection
+// Database Connection Configuration
+// Uses credentials stored in environment variables for security
 const pool = new Pool({
     user: process.env.DB_USER,
     host: process.env.DB_HOST,
@@ -21,43 +25,52 @@ const pool = new Pool({
     port: process.env.DB_PORT,
 });
 
+// Connect to the PostgreSQL database
 pool.connect((err) => {
     if (err) {
-        console.error('Database connection error', err.stack);
+        console.error('Database connection error', err.stack); // Log connection errors
     } else {
-        console.log('Connected to PostgreSQL');
+        console.log('Connected to PostgreSQL'); // Log successful connection
     }
 });
 
-// --- Auth Routes ---
+// --- Authentication Routes ---
 
-// Register
+// Register a new user
 app.post('/api/register', async (req, res) => {
     const { username, email, password } = req.body;
     try {
+        // Hash the password before storing it in the database for security
         const hashedPassword = await bcrypt.hash(password, 10);
+        // Insert the new user into the 'users' table
         const newUser = await pool.query(
             'INSERT INTO users (username, email, password) VALUES ($1, $2, $3) RETURNING id, username, email',
             [username, email, hashedPassword]
         );
+        // Return the newly created user details (excluding password)
         res.status(201).json(newUser.rows[0]);
     } catch (err) {
         console.error(err);
+        // Return error if registration fails (e.g., duplicate username or email)
         res.status(500).json({ error: 'Registration failed. Username or Email might be taken.' });
     }
 });
 
-// Login
+// Login an existing user
 app.post('/api/login', async (req, res) => {
     const { email, password } = req.body;
     try {
+        // Find the user in the database by their email
         const user = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
         if (user.rows.length === 0) return res.status(404).json({ error: 'User not found' });
 
+        // Compare the provided password with the hashed password in the database
         const isValid = await bcrypt.compare(password, user.rows[0].password);
         if (!isValid) return res.status(401).json({ error: 'Invalid credentials' });
 
+        // Generate a JWT token for the user session, valid for 1 hour
         const token = jwt.sign({ id: user.rows[0].id }, process.env.JWT_SECRET, { expiresIn: '1h' });
+        // Return the token and user information
         res.json({ token, user: { id: user.rows[0].id, username: user.rows[0].username, email: user.rows[0].email } });
     } catch (err) {
         console.error(err);
@@ -67,14 +80,16 @@ app.post('/api/login', async (req, res) => {
 
 // --- Post Routes ---
 
-// Create Post
+// Create a new post
 app.post('/api/posts', async (req, res) => {
     const { userId, content, imageUrl } = req.body;
     try {
+        // Insert a new post into the 'posts' table
         const newPost = await pool.query(
             'INSERT INTO posts (user_id, content, image_url) VALUES ($1, $2, $3) RETURNING *',
             [userId, content, imageUrl]
         );
+        // Return the created post data
         res.status(201).json(newPost.rows[0]);
     } catch (err) {
         console.error(err);
@@ -82,15 +97,17 @@ app.post('/api/posts', async (req, res) => {
     }
 });
 
-// Get All Posts
+// Retrieve all posts for the news feed
 app.get('/api/posts', async (req, res) => {
     try {
+        // Fetch posts joined with user information to display author names
         const posts = await pool.query(`
             SELECT posts.*, users.username 
             FROM posts 
             JOIN users ON posts.user_id = users.id 
             ORDER BY posts.created_at DESC
         `);
+        // Return the list of posts
         res.json(posts.rows);
     } catch (err) {
         console.error(err);
@@ -100,10 +117,12 @@ app.get('/api/posts', async (req, res) => {
 
 // --- Like Routes ---
 
+// Like a post
 app.post('/api/posts/:id/like', async (req, res) => {
     const { userId } = req.body;
     const postId = req.params.id;
     try {
+        // Record a like in the 'likes' table, avoiding duplicate likes from the same user
         await pool.query('INSERT INTO likes (user_id, post_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [userId, postId]);
         res.status(200).json({ message: 'Liked' });
     } catch (err) {
@@ -112,15 +131,15 @@ app.post('/api/posts/:id/like', async (req, res) => {
     }
 });
 
-// --- Comment Routes ---
-
 // --- Friend Routes ---
 
-// Send Friend Request
+// Send a friend request to another user
 app.post('/api/friends/request', async (req, res) => {
     const { userId, friendId } = req.body;
+    // Ensure user_id1 is always smaller than user_id2 to maintain a consistent pair in the DB
     const [id1, id2] = userId < friendId ? [userId, friendId] : [friendId, userId];
     try {
+        // Insert a pending friend relationship
         await pool.query(
             'INSERT INTO friends (user_id1, user_id2, status) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING',
             [id1, id2, 'pending']
@@ -132,11 +151,13 @@ app.post('/api/friends/request', async (req, res) => {
     }
 });
 
-// Accept Friend Request
+// Accept a friend request
 app.post('/api/friends/accept', async (req, res) => {
     const { userId, friendId } = req.body;
+    // Maintain consistent ordering of user IDs
     const [id1, id2] = userId < friendId ? [userId, friendId] : [friendId, userId];
     try {
+        // Update the status of the friend relationship to 'accepted'
         await pool.query(
             'UPDATE friends SET status = $1 WHERE user_id1 = $2 AND user_id2 = $3',
             ['accepted', id1, id2]
@@ -148,10 +169,11 @@ app.post('/api/friends/accept', async (req, res) => {
     }
 });
 
-// Get Friends List
+// Get the list of friends for a specific user
 app.get('/api/friends/:userId', async (req, res) => {
     const { userId } = req.params;
     try {
+        // Find all users who have an 'accepted' friendship with the current user
         const friends = await pool.query(`
             SELECT users.id, users.username 
             FROM friends 
@@ -160,6 +182,7 @@ app.get('/api/friends/:userId', async (req, res) => {
             AND users.id != $1 
             AND friends.status = 'accepted'
         `, [userId]);
+        // Return the list of friends
         res.json(friends.rows);
     } catch (err) {
         console.error(err);
@@ -167,6 +190,8 @@ app.get('/api/friends/:userId', async (req, res) => {
     }
 });
 
+// Start the server and listen for incoming requests
 app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
 });
+
