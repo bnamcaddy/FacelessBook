@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign Up | FacelessBook</title>
+    <link rel="shortcut icon" type="image/png" href="favicon.png?v=1">
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/releases/v6.0.0/css/all.min.css">
+</head>
+<body class="auth-page">
+    <div class="auth-container">
+        <div class="glass-card auth-card">
+            <div class="logo-container">
+                <img src="logo.png" alt="FacelessBook Logo" class="app-logo">
+                <h1>Join FacelessBook</h1>
+            </div>
+            <p>Connect and share with friends.</p>
+            <div id="register-form">
+                <div class="input-group">
+                    <i class="fas fa-user"></i>
+                    <input type="text" id="reg-username" placeholder="Username" required>
+                </div>
+                <div class="input-group">
+                    <i class="fas fa-envelope"></i>
+                    <input type="email" id="reg-email" placeholder="Email" required>
+                </div>
+                <div class="input-group">
+                    <i class="fas fa-lock"></i>
+                    <input type="password" id="reg-password" placeholder="Password (min 6 characters)" required>
+                    <i class="fas fa-eye toggle-password" onclick="togglePassword('reg-password', this)"></i>
+                </div>
+                <div class="input-group">
+                    <i class="fas fa-lock"></i>
+                    <input type="password" id="reg-confirm-password" placeholder="Confirm Password" required>
+                    <i class="fas fa-eye toggle-password" onclick="togglePassword('reg-confirm-password', this)"></i>
+                </div>
+                <button id="register-btn" class="primary-btn">Create Account</button>
+                <div class="msg-container" id="reg-msg"></div>
+                <hr>
+                <button id="google-signup-btn" class="google-btn">
+                    <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google">
+                    Sign up with Google
+                </button>
+                <p class="auth-switch">Already have an account? <a href="login.html">Log In</a></p>
+            </div>
+        </div>
+    </div>
+    <script src="auth.js"></script>
+</body>
+</html>

@@ -39,6 +39,12 @@ pool.connect((err) => {
 // Register a new user
 app.post('/api/register', async (req, res) => {
     const { username, email, password } = req.body;
+    
+    // Check for minimum password length
+    if (password.length < 6) {
+        return res.status(400).json({ error: 'Password must be at least 6 characters long.' });
+    }
+
     try {
         // Hash the password before storing it in the database for security
         const hashedPassword = await bcrypt.hash(password, 10);
@@ -47,8 +53,11 @@ app.post('/api/register', async (req, res) => {
             'INSERT INTO users (username, email, password) VALUES ($1, $2, $3) RETURNING id, username, email',
             [username, email, hashedPassword]
         );
-        // Return the newly created user details (excluding password)
-        res.status(201).json(newUser.rows[0]);
+        // Return the newly created user details and a success message
+        res.status(201).json({ 
+            message: 'Registration successful! You can now log in.', 
+            user: newUser.rows[0] 
+        });
     } catch (err) {
         console.error(err);
         // Return error if registration fails (e.g., duplicate username or email)
@@ -62,11 +71,11 @@ app.post('/api/login', async (req, res) => {
     try {
         // Find the user in the database by their email
         const user = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
-        if (user.rows.length === 0) return res.status(404).json({ error: 'User not found' });
+        if (user.rows.length === 0) return res.status(401).json({ error: 'Username or password is wrong' });
 
         // Compare the provided password with the hashed password in the database
         const isValid = await bcrypt.compare(password, user.rows[0].password);
-        if (!isValid) return res.status(401).json({ error: 'Invalid credentials' });
+        if (!isValid) return res.status(401).json({ error: 'Username or password is wrong' });
 
         // Generate a JWT token for the user session, valid for 1 hour
         const token = jwt.sign({ id: user.rows[0].id }, process.env.JWT_SECRET, { expiresIn: '1h' });
@@ -89,25 +98,31 @@ app.post('/api/posts', async (req, res) => {
             'INSERT INTO posts (user_id, content, image_url) VALUES ($1, $2, $3) RETURNING *',
             [userId, content, imageUrl]
         );
-        // Return the created post data
-        res.status(201).json(newPost.rows[0]);
+        // Return the created post data and a success message
+        res.status(201).json({ 
+            message: 'Post created successfully!', 
+            post: newPost.rows[0] 
+        });
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Failed to create post' });
     }
 });
 
-// Retrieve all posts for the news feed
+// Retrieve all posts for the news feed with counts
 app.get('/api/posts', async (req, res) => {
     try {
-        // Fetch posts joined with user information to display author names
         const posts = await pool.query(`
-            SELECT posts.*, users.username 
+            SELECT 
+                posts.*, 
+                users.username,
+                (SELECT COUNT(*) FROM likes WHERE likes.post_id = posts.id) as likes_count,
+                (SELECT COUNT(*) FROM comments WHERE comments.post_id = posts.id) as comments_count,
+                (SELECT COUNT(*) FROM shares WHERE shares.post_id = posts.id) as shares_count
             FROM posts 
             JOIN users ON posts.user_id = users.id 
             ORDER BY posts.created_at DESC
         `);
-        // Return the list of posts
         res.json(posts.rows);
     } catch (err) {
         console.error(err);
@@ -117,17 +132,68 @@ app.get('/api/posts', async (req, res) => {
 
 // --- Like Routes ---
 
-// Like a post
+// Like or Unlike a post (Toggle)
 app.post('/api/posts/:id/like', async (req, res) => {
     const { userId } = req.body;
     const postId = req.params.id;
     try {
-        // Record a like in the 'likes' table, avoiding duplicate likes from the same user
-        await pool.query('INSERT INTO likes (user_id, post_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [userId, postId]);
-        res.status(200).json({ message: 'Liked' });
+        const checkLike = await pool.query('SELECT * FROM likes WHERE user_id = $1 AND post_id = $2', [userId, postId]);
+        if (checkLike.rows.length > 0) {
+            await pool.query('DELETE FROM likes WHERE user_id = $1 AND post_id = $2', [userId, postId]);
+            res.status(200).json({ message: 'Unliked' });
+        } else {
+            await pool.query('INSERT INTO likes (user_id, post_id) VALUES ($1, $2)', [userId, postId]);
+            res.status(200).json({ message: 'Liked' });
+        }
     } catch (err) {
         console.error(err);
-        res.status(500).json({ error: 'Failed to like post' });
+        res.status(500).json({ error: 'Failed to toggle like' });
+    }
+});
+
+// --- Comment Routes ---
+
+// Add a comment to a post
+app.post('/api/posts/:id/comment', async (req, res) => {
+    const { userId, content } = req.body;
+    const postId = req.params.id;
+    try {
+        const newComment = await pool.query(
+            'INSERT INTO comments (user_id, post_id, content) VALUES ($1, $2, $3) RETURNING *',
+            [userId, postId, content]
+        );
+        // Return comment with username
+        const commentData = await pool.query(`
+            SELECT comments.*, users.username 
+            FROM comments 
+            JOIN users ON comments.user_id = users.id 
+            WHERE comments.id = $1
+        `, [newComment.rows[0].id]);
+        res.status(201).json({ 
+            message: 'Comment added successfully!', 
+            comment: commentData.rows[0] 
+        });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Failed to add comment' });
+    }
+});
+
+// Get all comments for a post
+app.get('/api/posts/:id/comments', async (req, res) => {
+    const postId = req.params.id;
+    try {
+        const comments = await pool.query(`
+            SELECT comments.*, users.username 
+            FROM comments 
+            JOIN users ON comments.user_id = users.id 
+            WHERE post_id = $1 
+            ORDER BY created_at ASC
+        `, [postId]);
+        res.json(comments.rows);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Failed to fetch comments' });
     }
 });
 
@@ -187,6 +253,21 @@ app.get('/api/friends/:userId', async (req, res) => {
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Failed to fetch friends' });
+    }
+});
+
+// --- Share Routes ---
+
+// Share a post
+app.post('/api/posts/:id/share', async (req, res) => {
+    const { userId } = req.body;
+    const postId = req.params.id;
+    try {
+        await pool.query('INSERT INTO shares (user_id, post_id) VALUES ($1, $2)', [userId, postId]);
+        res.status(200).json({ message: 'Shared' });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Failed to share post' });
     }
 });
 

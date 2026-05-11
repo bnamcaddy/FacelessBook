@@ -33,37 +33,177 @@ body {
 /* Glassmorphism Card Style: Used for all main UI containers */
 .glass-card {
     background: var(--glass-bg);
-    backdrop-filter: blur(10px); /* Frosted glass effect */
+    backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
     border: 1px solid var(--glass-border);
-    border-radius: 12px;
+    border-radius: 16px;
     box-shadow: var(--shadow);
-    padding: 20px;
+    padding: 24px;
 }
 
 /* --- Authentication Section Styling --- */
-#auth-section {
+.auth-page {
     display: flex;
     justify-content: center;
     align-items: center;
-    height: 100vh;
+    min-height: 100vh;
+    padding: 20px;
 }
 
-#auth-section .glass-card {
-    width: 400px;
+.auth-container {
+    width: 100%;
+    max-width: 420px;
+}
+
+.auth-card {
     text-align: center;
-    padding: 40px;
 }
 
-#auth-section h1 {
+.logo-container {
+    margin-bottom: 25px;
+}
+
+.app-logo {
+    width: 80px;
+    height: 80px;
+    margin-bottom: 12px;
+    border-radius: 16px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+
+.auth-card h1 {
     color: var(--primary-color);
-    font-size: 2.5rem;
-    margin-bottom: 10px;
+    font-size: 2.2rem;
+    margin-bottom: 5px;
 }
 
-#auth-section p {
-    margin-bottom: 30px;
+.auth-card p {
     color: var(--text-muted);
+    margin-bottom: 25px;
+}
+
+.input-group {
+    position: relative;
+    margin-bottom: 15px;
+}
+
+.input-group i {
+    position: absolute;
+    left: 15px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--text-muted);
+    width: 20px;
+    text-align: center;
+}
+
+.input-group input {
+    padding-left: 45px;
+    padding-right: 45px;
+    margin-bottom: 0;
+}
+
+.toggle-password {
+    position: absolute;
+    right: 15px;
+    top: 50%;
+    transform: translateY(-50%);
+    cursor: pointer;
+    color: var(--text-muted);
+    transition: color 0.3s;
+}
+
+.toggle-password:hover {
+    color: var(--primary-color);
+}
+
+.msg-container {
+    font-size: 0.9rem;
+    margin: 10px 0;
+    min-height: 1.2rem;
+    padding: 8px;
+    border-radius: 6px;
+    display: none;
+}
+
+.msg-container.error {
+    display: block;
+    color: #721c24;
+    background-color: #f8d7da;
+    border: 1px solid #f5c6cb;
+}
+
+.msg-container.success {
+    display: block;
+    color: #155724;
+    background-color: #d4edda;
+    border: 1px solid #c3e6cb;
+}
+
+.google-btn {
+    background: white;
+    color: #757575;
+    border: 1px solid #ddd;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    margin-top: 15px;
+    font-size: 1rem;
+}
+
+.google-btn img {
+    width: 20px;
+}
+
+.google-btn:hover {
+    background: #f8f9fa;
+    border-color: #ccc;
+}
+
+.auth-switch {
+    margin-top: 25px;
+    font-size: 0.95rem;
+}
+
+.auth-switch a {
+    color: var(--primary-color);
+    text-decoration: none;
+    font-weight: 600;
+}
+
+.auth-switch a:hover {
+    text-decoration: underline;
+}
+
+/* Toast Notifications */
+#toast-container {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    z-index: 2000;
+}
+
+.toast {
+    background: white;
+    color: var(--text-main);
+    padding: 12px 20px;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    margin-top: 10px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    animation: slideIn 0.3s ease-out;
+    border-left: 4px solid var(--primary-color);
+}
+
+.toast.error { border-left-color: #e74c3c; }
+.toast.success { border-left-color: #2ecc71; }
+
+@keyframes slideIn {
+    from { transform: translateX(100%); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
 }
 
 /* Form Input Styling */
@@ -149,6 +289,18 @@ hr {
     align-items: center;
     height: 100%;
     padding: 0 20px;
+}
+
+.logo-area {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.nav-logo {
+    width: 35px;
+    height: 35px;
+    border-radius: 8px;
 }
 
 .logo {
@@ -250,6 +402,19 @@ textarea {
     line-height: 1.5;
 }
 
+.post-stats {
+    display: flex;
+    gap: 15px;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    padding-bottom: 10px;
+    border-bottom: 1px solid #f0f2f5;
+}
+
+.post-stats i {
+    margin-right: 4px;
+}
+
 /* Styling for Like/Comment buttons inside posts */
 .post-actions {
     display: flex;
@@ -268,6 +433,80 @@ textarea {
 
 .action-btn:hover {
     background: rgba(0,0,0,0.05);
+}
+
+.action-btn i {
+    margin-right: 6px;
+    font-size: 1.1rem;
+}
+
+.like-btn i { color: #1877f2; }
+.comment-btn i { color: #65676b; }
+.share-btn i { color: #65676b; }
+
+/* Comments Section */
+.comments-section {
+    margin-top: 15px;
+    background: rgba(0, 0, 0, 0.02);
+    border-radius: 8px;
+    padding: 10px;
+    animation: slideDown 0.3s ease-out;
+}
+
+@keyframes slideDown {
+    from { opacity: 0; transform: translateY(-10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.comments-list {
+    margin-bottom: 15px;
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.comment {
+    font-size: 0.9rem;
+    padding: 8px;
+    border-radius: 12px;
+    background: #f0f2f5;
+    margin-bottom: 8px;
+    width: fit-content;
+    max-width: 90%;
+}
+
+.comment-user {
+    font-weight: 600;
+    margin-right: 5px;
+}
+
+.comment-text {
+    word-break: break-word;
+}
+
+.comment-input-area {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.comment-input-area input {
+    flex: 1;
+    margin-bottom: 0;
+    padding: 8px 15px;
+    font-size: 0.9rem;
+    background: #f0f2f5;
+    border: none;
+}
+
+.comment-input-area button {
+    width: auto;
+    padding: 8px 12px;
+    background: transparent;
+    color: var(--primary-color);
+}
+
+.comment-input-area button:hover {
+    color: var(--primary-hover);
 }
 
 /* Responsive Design: Collapse to single column on smaller screens */

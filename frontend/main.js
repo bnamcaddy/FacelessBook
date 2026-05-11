@@ -1,212 +1,218 @@
-// The base URL for the backend API
 const API_URL = 'http://localhost:5000/api';
 
 // --- Application State ---
-// Retrieve the logged-in user from local storage, or null if not logged in
 let currentUser = JSON.parse(localStorage.getItem('user')) || null;
 
 // --- DOM Element Selection ---
-// Selecting various sections and forms from the HTML to manipulate them with JS
-const authSection = document.getElementById('auth-section');
 const mainSection = document.getElementById('main-section');
-const loginForm = document.getElementById('login-form');
-const registerForm = document.getElementById('register-form');
 const postsContainer = document.getElementById('posts-container');
 const navUsername = document.getElementById('nav-username');
+const toastContainer = document.getElementById('toast-container');
 
 // --- Initialization ---
-// Checks if a user is already logged in when the page loads
 function init() {
-    if (currentUser) {
-        showMain(); // Show the feed if logged in
-    } else {
-        showAuth(); // Show the login screen if not logged in
+    if (!currentUser) {
+        window.location.href = 'login.html';
+        return;
     }
+    showMain();
+}
+
+// --- Utility Functions ---
+
+function showNotification(message, type = 'success') {
+    if (!toastContainer) return;
+    
+    const toast = document.createElement('div');
+    toast.className = `toast ${type}`;
+    const icon = type === 'success' ? 'fa-check-circle' : 'fa-exclamation-circle';
+    toast.innerHTML = `<i class="fas ${icon}"></i> <span>${message}</span>`;
+    
+    toastContainer.appendChild(toast);
+    
+    setTimeout(() => {
+        toast.style.opacity = '0';
+        setTimeout(() => toast.remove(), 300);
+    }, 4000);
 }
 
 // --- UI Toggle Functions ---
-
-// Display the login/registration section and hide the main feed
-function showAuth() {
-    authSection.classList.remove('hidden');
-    mainSection.classList.add('hidden');
-}
-
-// Display the main feed section and hide the auth section
 function showMain() {
-    authSection.classList.add('hidden');
-    mainSection.classList.remove('hidden');
-    // Set the username in the navbar to the current user's name
-    navUsername.innerText = currentUser.username;
-    // Fetch and display posts from the server
+    if (navUsername) navUsername.innerText = currentUser.username;
     fetchPosts();
 }
 
-// Switch to the registration form
-document.getElementById('show-register-btn').onclick = () => {
-    loginForm.classList.add('hidden');
-    registerForm.classList.remove('hidden');
-};
-
-// Switch to the login form
-document.getElementById('show-login-btn').onclick = () => {
-    registerForm.classList.add('hidden');
-    loginForm.classList.remove('hidden');
-};
-
-// --- Authentication Actions ---
-
-// Handle the user registration process
-document.getElementById('register-btn').onclick = async () => {
-    const username = document.getElementById('reg-username').value;
-    const email = document.getElementById('reg-email').value;
-    const password = document.getElementById('reg-password').value;
-
-    try {
-        // Send a POST request to the register API endpoint
-        const res = await fetch(`${API_URL}/register`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ username, email, password })
-        });
-        const data = await res.json();
-        // If the server returns an error, throw it to be caught by the catch block
-        if (data.error) throw new Error(data.error);
-        
-        alert('Registration successful! Please log in.');
-        // Automatically switch to the login view after successful registration
-        document.getElementById('show-login-btn').click();
-    } catch (err) {
-        alert(err.message); // Show error message to the user
-    }
-};
-
-// Handle the user login process
-document.getElementById('login-btn').onclick = async () => {
-    const email = document.getElementById('login-email').value;
-    const password = document.getElementById('login-password').value;
-
-    try {
-        // Send a POST request to the login API endpoint
-        const res = await fetch(`${API_URL}/login`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email, password })
-        });
-        const data = await res.json();
-        if (data.error) throw new Error(data.error);
-
-        // Store user data and authentication token in local storage for session persistence
-        currentUser = data.user;
-        localStorage.setItem('user', JSON.stringify(currentUser));
-        localStorage.setItem('token', data.token);
-        // Navigate to the main application view
-        showMain();
-    } catch (err) {
-        alert(err.message);
-    }
-};
-
-// Handle the logout process
-document.getElementById('logout-btn').onclick = () => {
-    // Clear user session data from local storage
-    localStorage.removeItem('user');
-    localStorage.removeItem('token');
-    currentUser = null;
-    // Redirect to the login screen
-    showAuth();
-};
+// --- Logout ---
+const logoutBtn = document.getElementById('logout-btn');
+if (logoutBtn) {
+    logoutBtn.onclick = () => {
+        localStorage.removeItem('user');
+        localStorage.removeItem('token');
+        window.location.href = 'login.html';
+    };
+}
 
 // --- Post Actions ---
 
-// Fetch all posts from the backend database
 async function fetchPosts() {
     try {
         const res = await fetch(`${API_URL}/posts`);
         const posts = await res.json();
-        // Pass the fetched posts to the render function to display them
         renderPosts(posts);
     } catch (err) {
-        console.error('Error fetching posts:', err);
+        showNotification('Failed to fetch posts.', 'error');
     }
 }
 
-// Dynamically generate and insert post HTML into the posts container
-function renderPosts(posts) {
-    postsContainer.innerHTML = ''; // Clear existing posts
-    posts.forEach(post => {
+async function renderPosts(posts) {
+    if (!postsContainer) return;
+    postsContainer.innerHTML = '';
+    
+    for (const post of posts) {
         const postEl = document.createElement('div');
-        postEl.className = 'post glass-card'; // Apply modern glassmorphism styling
+        postEl.className = 'post glass-card';
+        
+        // Fetch comments for this post
+        const commentsRes = await fetch(`${API_URL}/posts/${post.id}/comments`);
+        const comments = await commentsRes.json();
+        
         postEl.innerHTML = `
             <div class="post-header">
                 <div class="post-user">${post.username}</div>
                 <div class="post-date">${new Date(post.created_at).toLocaleDateString()}</div>
             </div>
             <div class="post-content">${post.content}</div>
+            
+            <div class="post-stats">
+                <span><i class="fas fa-thumbs-up"></i> ${post.likes_count || 0}</span>
+                <span><i class="fas fa-comment"></i> ${post.comments_count || 0}</span>
+                <span><i class="fas fa-share"></i> ${post.shares_count || 0}</span>
+            </div>
+            
             <div class="post-actions">
-                <!-- Click handlers for liking and commenting -->
-                <button class="action-btn like-btn" onclick="likePost(${post.id})">👍 Like</button>
-                <button class="action-btn comment-btn" onclick="addComment(${post.id})">💬 Comment</button>
+                <button class="action-btn like-btn" onclick="toggleLike(${post.id})">
+                    <i class="fas fa-thumbs-up"></i> Like
+                </button>
+                <button class="action-btn comment-btn" onclick="toggleComments(${post.id})">
+                    <i class="fas fa-comment"></i> Comment
+                </button>
+                <button class="action-btn share-btn" onclick="sharePost(${post.id})">
+                    <i class="fas fa-share"></i> Share
+                </button>
+            </div>
+            
+            <div class="comments-section" id="comments-${post.id}" style="display: none;">
+                <div class="comments-list" id="list-${post.id}">
+                    ${comments.map(c => `
+                        <div class="comment">
+                            <span class="comment-user">${c.username}:</span>
+                            <span class="comment-text">${c.content}</span>
+                        </div>
+                    `).join('')}
+                </div>
+                <div class="comment-input-area">
+                    <input type="text" placeholder="Write a comment..." id="input-${post.id}">
+                    <button onclick="addComment(${post.id})"><i class="fas fa-paper-plane"></i></button>
+                </div>
             </div>
         `;
         postsContainer.appendChild(postEl);
-    });
+    }
 }
 
-// Handle creating a new post
-document.getElementById('create-post-btn').onclick = async () => {
-    const content = document.getElementById('post-content').value;
-    if (!content) return; // Don't allow empty posts
+function toggleComments(postId) {
+    const section = document.getElementById(`comments-${postId}`);
+    section.style.display = section.style.display === 'none' ? 'block' : 'none';
+}
 
-    try {
-        // Send the new post content to the server
-        const res = await fetch(`${API_URL}/posts`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userId: currentUser.id, content })
-        });
-        if (res.ok) {
-            document.getElementById('post-content').value = ''; // Clear the input field
-            fetchPosts(); // Refresh the feed to show the new post
+const createPostBtn = document.getElementById('create-post-btn');
+if (createPostBtn) {
+    createPostBtn.onclick = async () => {
+        const content = document.getElementById('post-content').value;
+        if (!content) {
+            showNotification('Post content cannot be empty.', 'error');
+            return;
         }
-    } catch (err) {
-        console.error('Error creating post:', err);
-    }
-};
 
-// Handle liking a post
-async function likePost(postId) {
+        try {
+            const res = await fetch(`${API_URL}/posts`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId: currentUser.id, content })
+            });
+            const data = await res.json();
+            if (res.ok) {
+                document.getElementById('post-content').value = '';
+                showNotification(data.message || 'Post created successfully!');
+                fetchPosts();
+            } else {
+                throw new Error(data.error || 'Failed to create post');
+            }
+        } catch (err) {
+            showNotification(err.message, 'error');
+        }
+    };
+}
+
+async function toggleLike(postId) {
     try {
-        // Send a request to the like endpoint for the specific post
-        await fetch(`${API_URL}/posts/${postId}/like`, {
+        const res = await fetch(`${API_URL}/posts/${postId}/like`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ userId: currentUser.id })
         });
-        alert('Liked!');
+        const data = await res.json();
+        if (res.ok) {
+            showNotification(data.message);
+            fetchPosts(); // Refresh to update counts
+        }
     } catch (err) {
-        console.error('Error liking post:', err);
+        showNotification('Action failed', 'error');
     }
 }
 
-// Handle adding a comment to a post
 async function addComment(postId) {
-    const content = prompt("Enter your comment:");
+    const input = document.getElementById(`input-${postId}`);
+    const content = input.value;
     if (!content) return;
 
     try {
-        // Send the comment content to the server (Note: Endpoint must exist in server.js)
-        await fetch(`${API_URL}/posts/${postId}/comment`, {
+        const res = await fetch(`${API_URL}/posts/${postId}/comment`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ userId: currentUser.id, content })
         });
-        alert('Comment added!');
+        const data = await res.json();
+        if (res.ok) {
+            input.value = '';
+            // Append comment to list without full refresh for better UX
+            const list = document.getElementById(`list-${postId}`);
+            const commentEl = document.createElement('div');
+            commentEl.className = 'comment';
+            commentEl.innerHTML = `<span class="comment-user">${currentUser.username}:</span> <span class="comment-text">${content}</span>`;
+            list.appendChild(commentEl);
+            showNotification(data.message);
+        }
     } catch (err) {
-        console.error('Error adding comment:', err);
+        showNotification('Comment failed', 'error');
     }
 }
 
-// Kick off the application on page load
-init();
+async function sharePost(postId) {
+    try {
+        const res = await fetch(`${API_URL}/posts/${postId}/share`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId: currentUser.id })
+        });
+        const data = await res.json();
+        if (res.ok) {
+            showNotification(data.message);
+            fetchPosts();
+        }
+    } catch (err) {
+        showNotification('Share failed', 'error');
+    }
+}
 
+init();

@@ -4,53 +4,32 @@
     <!-- Document Metadata -->
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FacelessBook | Connect & Share</title>
+    <title>FacelessBook | Connect with Friends</title>
+    <link rel="shortcut icon" type="image/png" href="favicon.png?v=1">
     
     <!-- Link to external CSS stylesheet for styling the application -->
     <link rel="stylesheet" href="style.css">
     
     <!-- Import 'Outfit' font from Google Fonts for a modern look -->
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
+    <!-- Font Awesome for icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/releases/v6.0.0/css/all.min.css">
 </head>
 <body>
     <!-- Main application wrapper -->
     <div id="app">
-        
-        <!-- Authentication Section: Handles Login and Registration -->
-        <!-- Initially hidden; toggled by main.js based on auth state -->
-        <section id="auth-section" class="hidden">
-            <div class="glass-card">
-                <h1>FacelessBook</h1>
-                <p>Connect with the world around you.</p>
-                
-                <!-- Login Form Structure -->
-                <div id="login-form">
-                    <input type="email" id="login-email" placeholder="Email" required>
-                    <input type="password" id="login-password" placeholder="Password" required>
-                    <button id="login-btn" class="primary-btn">Log In</button>
-                    <hr>
-                    <button id="show-register-btn" class="secondary-btn">Create New Account</button>
-                </div>
-                
-                <!-- Registration Form Structure (Initially hidden) -->
-                <div id="register-form" class="hidden">
-                    <input type="text" id="reg-username" placeholder="Username" required>
-                    <input type="email" id="reg-email" placeholder="Email" required>
-                    <input type="password" id="reg-password" placeholder="Password" required>
-                    <button id="register-btn" class="primary-btn">Sign Up</button>
-                    <hr>
-                    <button id="show-login-btn" class="secondary-btn">Already have an account?</button>
-                </div>
-            </div>
-        </section>
+        <!-- Notification Area -->
+        <div id="toast-container"></div>
 
         <!-- Main Application Section: The news feed and user interface -->
-        <!-- Initially hidden; shown only after successful login -->
-        <section id="main-section" class="hidden">
+        <section id="main-section">
             <!-- Navigation bar at the top -->
             <nav class="navbar">
                 <div class="nav-content">
-                    <span class="logo">FacelessBook</span>
+                    <a href="#" class="logo-area">
+                        <img src="logo.png" alt="FacelessBook" class="nav-logo">
+                        <span class="logo">FacelessBook</span>
+                    </a>
                     <div class="user-info">
                         <!-- Displays the logged-in user's name -->
                         <span id="nav-username"></span>
@@ -64,10 +43,10 @@
                 <!-- Left Sidebar: Navigation links -->
                 <div class="sidebar left-sidebar">
                     <ul>
-                        <li><a href="#">🏠 Feed</a></li>
-                        <li><a href="#">👥 Friends</a></li>
-                        <li><a href="#">💬 Messages</a></li>
-                        <li><a href="#">⚙️ Settings</a></li>
+                        <li><a href="#"><i class="fas fa-home"></i> Feed</a></li>
+                        <li><a href="#"><i class="fas fa-users"></i> Friends</a></li>
+                        <li><a href="#"><i class="fas fa-comment-dots"></i> Messages</a></li>
+                        <li><a href="#"><i class="fas fa-cog"></i> Settings</a></li>
                     </ul>
                 </div>
 
