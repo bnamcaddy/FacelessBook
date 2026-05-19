@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FacelessBook | Home</title>
+    <title>FacelessBook | Profile</title>
     <link rel="shortcut icon" type="image/png" href="favicon.png?v=1">
     <link rel="stylesheet" href="style.css">
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
@@ -58,63 +58,31 @@
             </div>
         </nav>
 
-        <!-- Navigation Tabs -->
-        <div class="top-nav">
-            <div class="top-nav-content">
-                <a href="index.html" class="top-nav-item active"><i class="fas fa-home"></i><span>Home</span></a>
-                <a href="friends.html" class="top-nav-item"><i class="fas fa-user-friends"></i><span>Friends</span></a>
-                <a href="messages.html" class="top-nav-item"><i class="fas fa-comment-dots"></i><span>Messages</span></a>
-                <a href="reels.html" class="top-nav-item"><i class="fas fa-film"></i><span>Reels</span></a>
-                <a href="notifications.html" class="top-nav-item"><i class="fas fa-bell"></i><span>Notifications</span><span class="nav-badge" id="notif-badge" style="display:none;"></span></a>
-                <a href="marketplace.html" class="top-nav-item"><i class="fas fa-store"></i><span>Marketplace</span></a>
-            </div>
-        </div>
-
-        <!-- Main Content -->
-        <main class="container">
-            <div class="sidebar left-sidebar">
-                <ul>
-                    <li><a href="index.html" class="active"><i class="fas fa-home"></i> Home</a></li>
-                    <li><a href="friends.html"><i class="fas fa-user-friends"></i> Friends</a></li>
-                    <li><a href="messages.html"><i class="fas fa-comment-dots"></i> Messages</a></li>
-                    <li><a href="reels.html"><i class="fas fa-film"></i> Reels</a></li>
-                    <li><a href="notifications.html"><i class="fas fa-bell"></i> Notifications</a></li>
-                    <li><a href="marketplace.html"><i class="fas fa-store"></i> Marketplace</a></li>
-                    <li><a href="events.html"><i class="fas fa-calendar-alt"></i> Events</a></li>
-                    <li><a href="settings.html"><i class="fas fa-cog"></i> Settings</a></li>
-                </ul>
-            </div>
-
-            <div class="feed-section">
-                <!-- Stories Bar -->
-                <div class="stories-bar glass-card" id="stories-bar"></div>
-
-                <!-- Create Post -->
-                <div class="create-post glass-card">
-                    <div class="create-post-top">
-                        <img src="https://via.placeholder.com/40" alt="" class="post-avatar" id="create-post-avatar">
-                        <textarea id="post-content" placeholder="What's on your mind?"></textarea>
+        <!-- Profile Content -->
+        <main class="container single-col">
+            <div class="profile-header glass-card">
+                <div class="profile-cover"></div>
+                <div class="profile-info-main">
+                    <img src="https://via.placeholder.com/150" alt="" id="profile-pic" class="profile-picture">
+                    <div class="profile-text">
+                        <h1 id="profile-name">Loading...</h1>
+                        <p id="profile-bio">Member since recently</p>
                     </div>
-                    <div id="media-preview-container" class="media-preview hidden"></div>
-                    <hr>
-                    <div class="create-post-bottom">
-                        <div class="post-option" id="media-upload-btn">
-                            <i class="fas fa-images" style="color:var(--green);"></i>
-                            <span>Photo/Video</span>
-                        </div>
-                        <input type="file" id="post-media-input" hidden accept="image/*,video/*">
-                        <button id="create-post-btn" class="primary-btn">Post</button>
+                    <div class="profile-header-actions" style="margin-bottom: 16px;">
+                        <button class="primary-btn hidden" id="edit-profile-btn" style="padding: 10px 20px; border-radius: 8px; cursor: pointer;"><i class="fas fa-edit"></i> Edit Profile</button>
                     </div>
                 </div>
-
-                <!-- Posts Feed -->
-                <div id="posts-container"></div>
+                <div class="profile-tabs">
+                    <div class="profile-tab active">Posts</div>
+                    <div class="profile-tab">About</div>
+                    <div class="profile-tab">Friends</div>
+                    <div class="profile-tab">Photos</div>
+                </div>
             </div>
 
-            <div class="sidebar right-sidebar">
-                <h3>Friends</h3>
-                <div id="friends-list">
-                    <p style="color:var(--text-muted);font-size:0.9rem;">Loading...</p>
+            <div class="profile-body">
+                <div id="user-posts-container">
+                    <div class="empty-state">Loading posts...</div>
                 </div>
             </div>
         </main>
@@ -141,5 +109,27 @@
     </div>
 
     <script src="main.js"></script>
+    <style>
+        .profile-header { padding: 0; overflow: hidden; margin-bottom: 20px; }
+        .profile-cover { height: 240px; background: linear-gradient(to bottom, var(--primary), #6c5ce7); border-radius: 0 0 12px 12px; }
+        .profile-info-main { display: flex; align-items: flex-end; gap: 20px; padding: 0 32px; margin-top: -80px; position: relative; }
+        .profile-picture { width: 160px; height: 160px; border-radius: 50%; border: 4px solid var(--white); background: var(--bg); object-fit: cover; }
+        .profile-text { padding-bottom: 16px; flex: 1; }
+        .profile-text h1 { font-size: 2rem; margin-bottom: 4px; }
+        .profile-text p { color: var(--text-muted); }
+        .profile-tabs { display: flex; border-top: 1px solid var(--border); margin-top: 16px; padding: 0 16px; }
+        .profile-tab { padding: 16px 20px; font-weight: 600; color: var(--text-muted); cursor: pointer; border-bottom: 3px solid transparent; transition: all 0.2s; }
+        .profile-tab:hover { background: var(--hover-bg); }
+        .profile-tab.active { color: var(--primary); border-bottom-color: var(--primary); }
+        
+        @media (max-width: 768px) {
+            .profile-info-main { flex-direction: column; align-items: center; text-align: center; margin-top: -60px; padding: 0 16px; }
+            .profile-picture { width: 120px; height: 120px; }
+            .profile-cover { height: 160px; }
+            .profile-text { padding-bottom: 0; }
+            .profile-tabs { justify-content: center; overflow-x: auto; }
+            .profile-tab { padding: 12px 10px; font-size: 0.9rem; }
+        }
+    </style>
 </body>
 </html>

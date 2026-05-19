@@ -6,12 +6,12 @@
     <title>Sign Up | FacelessBook</title>
     <link rel="shortcut icon" type="image/png" href="favicon.png?v=1">
     <link rel="stylesheet" href="style.css">
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/releases/v6.0.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
 </head>
-<body class="auth-page">
+<body class="signup-page">
     <div class="auth-container">
-        <div class="glass-card auth-card">
+        <div class="auth-card">
             <div class="logo-container">
                 <img src="logo.png" alt="FacelessBook Logo" class="app-logo">
                 <h1>Join FacelessBook</h1>
@@ -39,14 +39,12 @@
                 <button id="register-btn" class="primary-btn">Create Account</button>
                 <div class="msg-container" id="reg-msg"></div>
                 <hr>
-                <button id="google-signup-btn" class="google-btn">
-                    <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google">
-                    Sign up with Google
-                </button>
+                <div id="google-btn-container" style="display: flex; justify-content: center; margin-top: 10px;"></div>
                 <p class="auth-switch">Already have an account? <a href="login.html">Log In</a></p>
             </div>
         </div>
     </div>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
     <script src="auth.js"></script>
 </body>
 </html>

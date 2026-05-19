@@ -16,6 +16,26 @@ function togglePassword(inputId, icon) {
     }
 }
 
+// Cookie Helpers
+function setCookie(name, value, days) {
+    const date = new Date();
+    date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000));
+    const expires = "expires=" + date.toUTCString();
+    document.cookie = name + "=" + value + ";" + expires + ";path=/;SameSite=Strict";
+}
+
+function getCookie(name) {
+    const cname = name + "=";
+    const decodedCookie = decodeURIComponent(document.cookie);
+    const ca = decodedCookie.split(';');
+    for (let i = 0; i < ca.length; i++) {
+        let c = ca[i];
+        while (c.charAt(0) == ' ') c = c.substring(1);
+        if (c.indexOf(cname) == 0) return c.substring(cname.length, c.length);
+    }
+    return "";
+}
+
 // Show Message in UI
 function showMessage(containerId, text, type = 'error') {
     const container = document.getElementById(containerId);
@@ -33,7 +53,7 @@ function showMessage(containerId, text, type = 'error') {
 }
 
 // --- Redirect if already logged in ---
-if (localStorage.getItem('user')) {
+if (getCookie('token') && localStorage.getItem('user')) {
     window.location.href = 'index.html';
 }
 
@@ -103,7 +123,7 @@ if (loginBtn) {
             if (!res.ok) throw new Error(data.error || 'Login failed');
 
             localStorage.setItem('user', JSON.stringify(data.user));
-            localStorage.setItem('token', data.token);
+            setCookie('token', data.token, 7); // Store token in cookie for 7 days
             showMessage(msgContainer, 'Login successful! Entering FacelessBook...', 'success');
             setTimeout(() => {
                 window.location.href = 'index.html';
@@ -114,13 +134,97 @@ if (loginBtn) {
     };
 }
 
-// --- Placeholder for Google Auth ---
-const googleLoginBtn = document.getElementById('google-login-btn');
-const googleSignupBtn = document.getElementById('google-signup-btn');
+// --- Google Auth ---
+const GOOGLE_CLIENT_ID = '123456789-placeholder.apps.googleusercontent.com'; // Replace with real Client ID later
 
-const handleGoogleAuth = () => {
-    alert('Google OAuth integration requires backend configuration with Client ID. Redirecting to auth flow...');
+async function handleGoogleCallback(response) {
+    const msgContainer = document.getElementById('login-msg') || document.getElementById('reg-msg');
+    
+    try {
+        const res = await fetch(`${API_URL}/auth/google`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token: response.credential })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Google login failed');
+
+        localStorage.setItem('user', JSON.stringify(data.user));
+        setCookie('token', data.token, 7);
+        showMessage(msgContainer ? msgContainer.id : '', 'Google Login successful! Redirecting...', 'success');
+        
+        setTimeout(() => {
+            window.location.href = 'index.html';
+        }, 1000);
+    } catch (err) {
+        if (msgContainer) showMessage(msgContainer.id, err.message);
+        else alert(err.message);
+    }
+}
+
+window.onload = function() {
+    if (window.google) {
+        google.accounts.id.initialize({
+            client_id: GOOGLE_CLIENT_ID,
+            callback: handleGoogleCallback
+        });
+        
+        const btnContainer = document.getElementById('google-btn-container');
+        if (btnContainer) {
+            google.accounts.id.renderButton(
+                btnContainer,
+                { theme: "outline", size: "large", type: "standard" }
+            );
+        }
+    }
 };
 
-if (googleLoginBtn) googleLoginBtn.onclick = handleGoogleAuth;
-if (googleSignupBtn) googleSignupBtn.onclick = handleGoogleAuth;
+// --- Handle Password Reset ---
+const resetBtn = document.getElementById('reset-btn');
+if (resetBtn) {
+    resetBtn.onclick = async () => {
+        const email = document.getElementById('reset-email').value;
+        const newPassword = document.getElementById('reset-new-password').value;
+        const confirmPassword = document.getElementById('reset-confirm-password').value;
+        const msgContainer = 'reset-msg';
+
+        if (!email || !newPassword || !confirmPassword) {
+            showMessage(msgContainer, 'Please fill in all fields.');
+            return;
+        }
+
+        if (newPassword.length < 6) {
+            showMessage(msgContainer, 'Password must be at least 6 characters long.');
+            return;
+        }
+
+        if (newPassword !== confirmPassword) {
+            showMessage(msgContainer, 'Passwords do not match.');
+            return;
+        }
+
+        try {
+            const res = await fetch(`${API_URL}/reset-password`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email, newPassword })
+            });
+            
+            const contentType = res.headers.get("content-type");
+            if (contentType && contentType.indexOf("application/json") !== -1) {
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || 'Password reset failed');
+                showMessage(msgContainer, data.message, 'success');
+                setTimeout(() => {
+                    window.location.href = 'login.html';
+                }, 3000);
+            } else {
+                const text = await res.text();
+                console.error('Non-JSON response:', text);
+                throw new Error('Server returned an unexpected response. Please ensure the backend server is running and updated.');
+            }
+        } catch (err) {
+            showMessage(msgContainer, err.message);
+        }
+    };
+}

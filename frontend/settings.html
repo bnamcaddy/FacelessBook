@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Settings | FacelessBook</title>
+    <link rel="shortcut icon" type="image/png" href="favicon.png?v=1">
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+</head>
+<body class="settings-page">
+    <div id="app">
+        <div id="toast-container"></div>
+
+        <!-- Top Navbar -->
+        <nav class="navbar">
+            <div class="nav-content">
+                <a href="index.html" class="logo-area">
+                    <img src="logo.png" alt="FacelessBook" class="nav-logo">
+                    <span class="logo">FacelessBook</span>
+                </a>
+                <div class="header-actions">
+                    <div class="search-container">
+                        <div class="search-bar" id="search-bar">
+                            <i class="fas fa-search search-icon"></i>
+                            <input type="text" id="header-search-input" placeholder="Search FacelessBook">
+                        </div>
+                        <div id="search-results" class="search-results-dropdown"></div>
+                    </div>
+
+                    <div class="nav-right-actions">
+                        <button class="nav-icon-btn" id="nav-plus-btn" title="Create"><i class="fas fa-plus"></i></button>
+                        <button class="nav-icon-btn" id="nav-search-btn-mobile" title="Search"><i class="fas fa-search"></i></button>
+                        <button class="nav-icon-btn" id="nav-menu-btn" title="Menu"><i class="fas fa-bars"></i></button>
+                        
+                        <div class="nav-user-profile" id="nav-profile-link">
+                            <img src="https://via.placeholder.com/40" alt="" id="nav-profile-pic" class="nav-avatar">
+                            <span id="nav-username"></span>
+                        </div>
+                    </div>
+
+                    <!-- Dropdowns -->
+                    <div class="dropdown-menu" id="plus-dropdown">
+                        <div class="dropdown-item" onclick="openModal('post')"><i class="fas fa-pen-to-square"></i> Create Post</div>
+                        <div class="dropdown-item" onclick="openModal('story')"><i class="fas fa-clock-rotate-left"></i> Create Story</div>
+                        <div class="dropdown-item" onclick="openModal('reel')"><i class="fas fa-film"></i> Create Reel</div>
+                        <div class="dropdown-item" onclick="openModal('note')"><i class="fas fa-sticky-note"></i> Create Note</div>
+                    </div>
+
+                    <div class="dropdown-menu" id="menu-dropdown">
+                        <div class="dropdown-item" id="menu-profile-btn"><i class="fas fa-user"></i> Profile</div>
+                        <div class="dropdown-item active" onclick="window.location.href='settings.html'" style="color:var(--primary);"><i class="fas fa-cog"></i> Settings</div>
+                        <hr>
+                        <div class="dropdown-item" id="logout-btn-new"><i class="fas fa-sign-out-alt"></i> Logout</div>
+                    </div>
+                </div>
+            </div>
+        </nav>
+
+        <main class="settings-container">
+            <aside class="settings-sidebar glass-card">
+                <div class="settings-sidebar-header">
+                    <h3>Settings</h3>
+                </div>
+                <div class="settings-nav">
+                    <div class="settings-cat active" data-cat="profile"><i class="fas fa-user"></i> Profile Settings</div>
+                    <div class="settings-cat" data-cat="account"><i class="fas fa-shield-alt"></i> Account Settings</div>
+                    <div class="settings-cat" data-cat="privacy"><i class="fas fa-lock"></i> Privacy Settings</div>
+                    <div class="settings-cat" data-cat="notifications"><i class="fas fa-bell"></i> Notification Settings</div>
+                    <div class="settings-cat" data-cat="appearance"><i class="fas fa-palette"></i> Appearance</div>
+                    <div class="settings-cat" data-cat="security"><i class="fas fa-key"></i> Security</div>
+                    <div class="settings-cat" data-cat="storage"><i class="fas fa-database"></i> Media & Storage</div>
+                </div>
+            </aside>
+
+            <section class="settings-content-panel glass-card" id="settings-content">
+                <!-- Content loaded dynamically via main.js -->
+                <div class="loading-spinner">Loading...</div>
+            </section>
+        </main>
+
+        <!-- Create Modal -->
+        <div class="modal-overlay" id="modal-overlay">
+            <div class="modal">
+                <div class="modal-header">
+                    <h2 id="modal-title">Create Post</h2>
+                    <button class="modal-close" onclick="closeModal()">&times;</button>
+                </div>
+                <div class="modal-body" id="modal-body"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="main.js"></script>
+    <style>
+        .settings-container { display: flex; gap: 24px; max-width: 1200px; margin: 24px auto; padding: 0 20px; height: calc(100vh - 100px); }
+        .settings-sidebar { width: 300px; padding: 12px; display: flex; flex-direction: column; overflow-y: auto; }
+        .settings-sidebar-header { padding: 12px; border-bottom: 1px solid var(--border); margin-bottom: 12px; }
+        .settings-nav { display: flex; flex-direction: column; gap: 4px; }
+        .settings-cat { padding: 12px 16px; border-radius: 8px; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; gap: 12px; font-weight: 500; color: var(--text-muted); }
+        .settings-cat i { width: 20px; text-align: center; }
+        .settings-cat:hover { background: var(--hover-bg); color: var(--text); }
+        .settings-cat.active { background: var(--primary); color: white; }
+        
+        .settings-content-panel { flex: 1; padding: 32px; overflow-y: auto; }
+        .settings-content-panel h2 { margin-bottom: 24px; font-size: 1.5rem; }
+        .settings-group { margin-bottom: 24px; }
+        .settings-group label { display: block; margin-bottom: 8px; font-weight: 600; font-size: 0.9rem; }
+        .settings-group input, .settings-group select, .settings-group textarea { width: 100%; padding: 10px 14px; border: 1px solid var(--border); border-radius: 8px; background: var(--white); color: var(--text); font-family: inherit; }
+        .settings-group textarea { height: 100px; resize: none; }
+        
+        .toggle-group { display: flex; justify-content: space-between; align-items: center; }
+        .theme-options { display: flex; gap: 16px; }
+        .theme-box { flex: 1; padding: 16px; border: 2px solid var(--border); border-radius: 12px; text-align: center; cursor: pointer; font-weight: 600; }
+        .theme-box.active { border-color: var(--primary); background: var(--hover-bg); }
+        .color-options { display: flex; gap: 12px; }
+        .color-circle { width: 32px; height: 32px; border-radius: 50%; cursor: pointer; border: 3px solid transparent; transition: scale 0.2s; }
+        .color-circle:hover { scale: 1.1; }
+        
+        .danger-btn { background: #ff4757; color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: 600; }
+        .danger-btn:hover { background: #ff6b81; }
+
+        @media (max-width: 900px) {
+            .settings-container { flex-direction: column; height: auto; }
+            .settings-sidebar { width: 100%; height: auto; }
+            .settings-content-panel { height: auto; }
+        }
+    </style>
+</body>
+</html>
