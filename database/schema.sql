@@ -21,14 +21,16 @@ CREATE TABLE IF NOT EXISTS posts (
     content TEXT NOT NULL,
     image_url TEXT,
     post_type VARCHAR(20) DEFAULT 'post', -- 'post', 'story', 'reel', 'note'
+    privacy VARCHAR(30) DEFAULT 'public', -- 'public', 'friends', 'close_friends', 'only_me'
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Likes Table: Tracks which users liked which posts
+-- Likes Table: Tracks which users liked/reacted to which posts
 CREATE TABLE IF NOT EXISTS likes (
     id SERIAL PRIMARY KEY,
     user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
     post_id INTEGER REFERENCES posts(id) ON DELETE CASCADE,
+    reaction_type VARCHAR(20) DEFAULT 'like',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(user_id, post_id)
 );
@@ -47,6 +49,7 @@ CREATE TABLE IF NOT EXISTS friends (
     id SERIAL PRIMARY KEY,
     user_id1 INTEGER REFERENCES users(id) ON DELETE CASCADE,
     user_id2 INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    action_user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
     status VARCHAR(20) DEFAULT 'pending',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     CHECK (user_id1 < user_id2),
@@ -121,4 +124,23 @@ CREATE TABLE IF NOT EXISTS marketplace (
     category VARCHAR(50) DEFAULT 'General',
     status VARCHAR(20) DEFAULT 'available', -- 'available', 'sold'
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Close Friends Table: Tracks close friend relationships
+CREATE TABLE IF NOT EXISTS close_friends (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    friend_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, friend_id)
+);
+
+-- Comment Reactions Table: Tracks user reactions on comments
+CREATE TABLE IF NOT EXISTS comment_reactions (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    comment_id INTEGER REFERENCES comments(id) ON DELETE CASCADE,
+    reaction_type VARCHAR(20) DEFAULT 'like',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, comment_id)
 );

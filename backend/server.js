@@ -11,6 +11,48 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+// Set up HTTP and Socket.io server
+const http = require('http');
+const server = http.createServer(app);
+const { Server } = require('socket.io');
+const io = new Server(server, {
+    cors: {
+        origin: "*",
+        methods: ["GET", "POST", "PUT", "DELETE"]
+    }
+});
+
+// Map of userId -> socket.id
+const userSockets = new Map();
+
+io.on('connection', (socket) => {
+    console.log('Socket connected:', socket.id);
+    
+    // Register user
+    socket.on('register', (userId) => {
+        userSockets.set(Number(userId), socket.id);
+        console.log(`User ${userId} registered with socket ${socket.id}`);
+    });
+    
+    // Handle typing state
+    socket.on('typing', ({ senderId, receiverId, isTyping }) => {
+        const receiverSocketId = userSockets.get(Number(receiverId));
+        if (receiverSocketId) {
+            io.to(receiverSocketId).emit('typing', { senderId, isTyping });
+        }
+    });
+    
+    socket.on('disconnect', () => {
+        for (let [userId, socketId] of userSockets.entries()) {
+            if (socketId === socket.id) {
+                userSockets.delete(userId);
+                console.log(`User ${userId} disconnected`);
+                break;
+            }
+        }
+    });
+});
+
 // Google OAuth Client Setup
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '123456789-placeholder.apps.googleusercontent.com';
 const googleClient = new OAuth2Client(GOOGLE_CLIENT_ID);
@@ -62,6 +104,35 @@ const pool = new Pool({
     password: process.env.DB_PASSWORD,
     port: process.env.DB_PORT,
 });
+
+// Helper to create notification and emit real-time Socket event
+async function createNotification(userId, senderId, type, message, referenceId = null) {
+    try {
+        const result = await pool.query(
+            'INSERT INTO notifications (user_id, sender_id, type, message, reference_id) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+            [userId, senderId, type, message, referenceId]
+        );
+        
+        // Fetch sender details to emit
+        const sender = await pool.query('SELECT username, profile_pic FROM users WHERE id = $1', [senderId]);
+        const senderUsername = sender.rows[0] ? sender.rows[0].username : 'Someone';
+        const senderPic = sender.rows[0] ? sender.rows[0].profile_pic : null;
+
+        const notifPayload = {
+            ...result.rows[0],
+            sender_username: senderUsername,
+            sender_pic: senderPic
+        };
+
+        const receiverSocketId = userSockets.get(Number(userId));
+        if (receiverSocketId) {
+            io.to(receiverSocketId).emit('notification', notifPayload);
+        }
+        return result.rows[0];
+    } catch (err) {
+        console.error('Error creating notification:', err);
+    }
+}
 
 pool.connect(async (err, client, release) => {
     if (err) {
@@ -120,6 +191,36 @@ pool.connect(async (err, client, release) => {
             
             await client.query('ALTER TABLE posts ADD COLUMN IF NOT EXISTS post_type VARCHAR(20) DEFAULT \'post\'');
             await client.query('UPDATE posts SET post_type = \'post\' WHERE post_type IS NULL');
+            
+            await client.query('ALTER TABLE posts ADD COLUMN IF NOT EXISTS privacy VARCHAR(30) DEFAULT \'public\'');
+            await client.query('UPDATE posts SET privacy = \'public\' WHERE privacy IS NULL');
+            
+            await client.query(`
+                CREATE TABLE IF NOT EXISTS close_friends (
+                    id SERIAL PRIMARY KEY,
+                    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+                    friend_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(user_id, friend_id)
+                );
+            `);
+            
+            await client.query('ALTER TABLE friends ADD COLUMN IF NOT EXISTS action_user_id INTEGER REFERENCES users(id) ON DELETE CASCADE');
+            await client.query('ALTER TABLE messages ADD COLUMN IF NOT EXISTS is_read BOOLEAN DEFAULT FALSE');
+
+            // Reactions migrations
+            await client.query('ALTER TABLE likes ADD COLUMN IF NOT EXISTS reaction_type VARCHAR(20) DEFAULT \'like\'');
+            await client.query('UPDATE likes SET reaction_type = \'like\' WHERE reaction_type IS NULL');
+            await client.query(`
+                CREATE TABLE IF NOT EXISTS comment_reactions (
+                    id SERIAL PRIMARY KEY,
+                    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+                    comment_id INTEGER REFERENCES comments(id) ON DELETE CASCADE,
+                    reaction_type VARCHAR(20) DEFAULT 'like',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(user_id, comment_id)
+                );
+            `);
             
             console.log('Database migrations completed');
         } catch (migrationErr) {
@@ -246,11 +347,11 @@ app.post('/api/reset-password', async (req, res) => {
 
 // Create a new post
 app.post('/api/posts', async (req, res) => {
-    const { userId, content, imageUrl, postType } = req.body;
+    const { userId, content, imageUrl, postType, privacy } = req.body;
     try {
         const newPost = await pool.query(
-            'INSERT INTO posts (user_id, content, image_url, post_type) VALUES ($1, $2, $3, $4) RETURNING *',
-            [userId, content, imageUrl || null, postType || 'post']
+            'INSERT INTO posts (user_id, content, image_url, post_type, privacy) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+            [userId, content, imageUrl || null, postType || 'post', privacy || 'public']
         );
         res.status(201).json({
             message: 'Post created successfully!',
@@ -264,6 +365,7 @@ app.post('/api/posts', async (req, res) => {
 
 // Retrieve all posts for the news feed with counts
 app.get('/api/posts', async (req, res) => {
+    const viewerId = req.query.viewerId ? Number(req.query.viewerId) : 0;
     try {
         const posts = await pool.query(`
             SELECT 
@@ -272,12 +374,35 @@ app.get('/api/posts', async (req, res) => {
                 users.profile_pic,
                 (SELECT COUNT(*) FROM likes WHERE likes.post_id = posts.id) as likes_count,
                 (SELECT COUNT(*) FROM comments WHERE comments.post_id = posts.id) as comments_count,
-                (SELECT COUNT(*) FROM shares WHERE shares.post_id = posts.id) as shares_count
+                (SELECT COUNT(*) FROM shares WHERE shares.post_id = posts.id) as shares_count,
+                (SELECT reaction_type FROM likes WHERE likes.post_id = posts.id AND likes.user_id = $1) as viewer_reaction,
+                (
+                    SELECT json_object_agg(reaction_type, cnt) 
+                    FROM (
+                        SELECT reaction_type, COUNT(*) as cnt 
+                        FROM likes 
+                        WHERE likes.post_id = posts.id 
+                        GROUP BY reaction_type
+                    ) x
+                ) as reactions_summary
             FROM posts 
             JOIN users ON posts.user_id = users.id 
-            WHERE posts.post_type = 'post' OR posts.post_type IS NULL
+            WHERE (posts.post_type = 'post' OR posts.post_type IS NULL)
+              AND (
+                  posts.privacy = 'public'
+                  OR posts.user_id = $1
+                  OR (posts.privacy = 'friends' AND EXISTS (
+                      SELECT 1 FROM friends 
+                      WHERE ((user_id1 = posts.user_id AND user_id2 = $1) OR (user_id1 = $1 AND user_id2 = posts.user_id))
+                        AND status = 'accepted'
+                  ))
+                  OR (posts.privacy = 'close_friends' AND EXISTS (
+                      SELECT 1 FROM close_friends
+                      WHERE user_id = posts.user_id AND friend_id = $1
+                  ))
+              )
             ORDER BY posts.created_at DESC
-        `);
+        `, [viewerId]);
         res.json(posts.rows);
     } catch (err) {
         console.error(err);
@@ -289,6 +414,40 @@ app.get('/api/posts', async (req, res) => {
 // --- Like Routes ---
 // ============================================================
 
+app.post('/api/posts/:id/react', async (req, res) => {
+    const { userId, reactionType } = req.body; // 'like', 'love', 'care', 'haha', 'wow', 'sad', 'angry'
+    const postId = req.params.id;
+    const type = reactionType || 'like';
+    try {
+        const checkReact = await pool.query('SELECT * FROM likes WHERE user_id = $1 AND post_id = $2', [userId, postId]);
+        if (checkReact.rows.length > 0) {
+            if (checkReact.rows[0].reaction_type === type) {
+                // Same reaction: remove it (toggle off)
+                await pool.query('DELETE FROM likes WHERE user_id = $1 AND post_id = $2', [userId, postId]);
+                res.status(200).json({ message: 'Removed', reaction: null });
+            } else {
+                // Different reaction: update it
+                await pool.query('UPDATE likes SET reaction_type = $1 WHERE user_id = $2 AND post_id = $3', [type, userId, postId]);
+                res.status(200).json({ message: 'Updated', reaction: type });
+            }
+        } else {
+            // New reaction
+            await pool.query('INSERT INTO likes (user_id, post_id, reaction_type) VALUES ($1, $2, $3)', [userId, postId, type]);
+            // Create notification for post owner
+            const post = await pool.query('SELECT user_id FROM posts WHERE id = $1', [postId]);
+            if (post.rows.length > 0 && post.rows[0].user_id !== userId) {
+                const sender = await pool.query('SELECT username FROM users WHERE id = $1', [userId]);
+                await createNotification(post.rows[0].user_id, userId, 'like', `${sender.rows[0].username} reacted to your post`, postId);
+            }
+            res.status(200).json({ message: 'Reacted', reaction: type });
+        }
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Failed to react to post' });
+    }
+});
+
+// Deprecated endpoint for simple backward compatibility (defaults to 'like' toggle)
 app.post('/api/posts/:id/like', async (req, res) => {
     const { userId } = req.body;
     const postId = req.params.id;
@@ -298,15 +457,11 @@ app.post('/api/posts/:id/like', async (req, res) => {
             await pool.query('DELETE FROM likes WHERE user_id = $1 AND post_id = $2', [userId, postId]);
             res.status(200).json({ message: 'Unliked' });
         } else {
-            await pool.query('INSERT INTO likes (user_id, post_id) VALUES ($1, $2)', [userId, postId]);
-            // Create notification for post owner
+            await pool.query('INSERT INTO likes (user_id, post_id, reaction_type) VALUES ($1, $2, \'like\')', [userId, postId]);
             const post = await pool.query('SELECT user_id FROM posts WHERE id = $1', [postId]);
             if (post.rows.length > 0 && post.rows[0].user_id !== userId) {
                 const sender = await pool.query('SELECT username FROM users WHERE id = $1', [userId]);
-                await pool.query(
-                    'INSERT INTO notifications (user_id, sender_id, type, message, reference_id) VALUES ($1, $2, $3, $4, $5)',
-                    [post.rows[0].user_id, userId, 'like', `${sender.rows[0].username} liked your post`, postId]
-                );
+                await createNotification(post.rows[0].user_id, userId, 'like', `${sender.rows[0].username} liked your post`, postId);
             }
             res.status(200).json({ message: 'Liked' });
         }
@@ -316,13 +471,13 @@ app.post('/api/posts/:id/like', async (req, res) => {
     }
 });
 
-// Check if user liked a post
+// Check if user reacted to a post
 app.get('/api/posts/:id/liked/:userId', async (req, res) => {
     try {
         const result = await pool.query('SELECT * FROM likes WHERE user_id = $1 AND post_id = $2', [req.params.userId, req.params.id]);
-        res.json({ liked: result.rows.length > 0 });
+        res.json({ liked: result.rows.length > 0, reaction: result.rows[0] ? result.rows[0].reaction_type : null });
     } catch (err) {
-        res.status(500).json({ error: 'Failed to check like status' });
+        res.status(500).json({ error: 'Failed to check reaction status' });
     }
 });
 
@@ -349,10 +504,7 @@ app.post('/api/posts/:id/comment', async (req, res) => {
         const post = await pool.query('SELECT user_id FROM posts WHERE id = $1', [postId]);
         if (post.rows.length > 0 && post.rows[0].user_id !== userId) {
             const sender = await pool.query('SELECT username FROM users WHERE id = $1', [userId]);
-            await pool.query(
-                'INSERT INTO notifications (user_id, sender_id, type, message, reference_id) VALUES ($1, $2, $3, $4, $5)',
-                [post.rows[0].user_id, userId, 'comment', `${sender.rows[0].username} commented on your post`, postId]
-            );
+            await createNotification(post.rows[0].user_id, userId, 'comment', `${sender.rows[0].username} commented on your post`, postId);
         }
 
         res.status(201).json({
@@ -367,18 +519,67 @@ app.post('/api/posts/:id/comment', async (req, res) => {
 
 app.get('/api/posts/:id/comments', async (req, res) => {
     const postId = req.params.id;
+    const viewerId = req.query.viewerId ? Number(req.query.viewerId) : 0;
     try {
         const comments = await pool.query(`
-            SELECT comments.*, users.username 
+            SELECT 
+                comments.*, 
+                users.username,
+                (SELECT COUNT(*) FROM comment_reactions WHERE comment_reactions.comment_id = comments.id) as reactions_count,
+                (
+                    SELECT json_object_agg(reaction_type, cnt) 
+                    FROM (
+                        SELECT reaction_type, COUNT(*) as cnt 
+                        FROM comment_reactions 
+                        WHERE comment_reactions.comment_id = comments.id 
+                        GROUP BY reaction_type
+                    ) x
+                ) as reactions_summary,
+                (SELECT reaction_type FROM comment_reactions WHERE comment_reactions.comment_id = comments.id AND comment_reactions.user_id = $2) as viewer_reaction
             FROM comments 
             JOIN users ON comments.user_id = users.id 
             WHERE post_id = $1 
             ORDER BY created_at ASC
-        `, [postId]);
+        `, [postId, viewerId]);
         res.json(comments.rows);
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Failed to fetch comments' });
+    }
+});
+
+// React to a comment
+app.post('/api/comments/:id/react', async (req, res) => {
+    const { userId, reactionType } = req.body;
+    const commentId = req.params.id;
+    const type = reactionType || 'like';
+    try {
+        const checkReact = await pool.query('SELECT * FROM comment_reactions WHERE user_id = $1 AND comment_id = $2', [userId, commentId]);
+        if (checkReact.rows.length > 0) {
+            if (checkReact.rows[0].reaction_type === type) {
+                // Same reaction: toggle off
+                await pool.query('DELETE FROM comment_reactions WHERE user_id = $1 AND comment_id = $2', [userId, commentId]);
+                res.status(200).json({ message: 'Removed', reaction: null });
+            } else {
+                // Different reaction: update it
+                await pool.query('UPDATE comment_reactions SET reaction_type = $1 WHERE user_id = $2 AND comment_id = $3', [type, userId, commentId]);
+                res.status(200).json({ message: 'Updated', reaction: type });
+            }
+        } else {
+            // New reaction
+            await pool.query('INSERT INTO comment_reactions (user_id, comment_id, reaction_type) VALUES ($1, $2, $3)', [userId, commentId, type]);
+            
+            // Create notification for comment owner
+            const comment = await pool.query('SELECT user_id, post_id FROM comments WHERE id = $1', [commentId]);
+            if (comment.rows.length > 0 && comment.rows[0].user_id !== userId) {
+                const sender = await pool.query('SELECT username FROM users WHERE id = $1', [userId]);
+                await createNotification(comment.rows[0].user_id, userId, 'comment', `${sender.rows[0].username} reacted to your comment`, comment.rows[0].post_id);
+            }
+            res.status(200).json({ message: 'Reacted', reaction: type });
+        }
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Failed to react to comment' });
     }
 });
 
@@ -392,15 +593,12 @@ app.post('/api/friends/request', async (req, res) => {
     const [id1, id2] = userId < friendId ? [userId, friendId] : [friendId, userId];
     try {
         await pool.query(
-            'INSERT INTO friends (user_id1, user_id2, status) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING',
-            [id1, id2, 'pending']
+            'INSERT INTO friends (user_id1, user_id2, action_user_id, status) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING',
+            [id1, id2, userId, 'pending']
         );
         // Create notification
         const sender = await pool.query('SELECT username FROM users WHERE id = $1', [userId]);
-        await pool.query(
-            'INSERT INTO notifications (user_id, sender_id, type, message) VALUES ($1, $2, $3, $4)',
-            [friendId, userId, 'friend_request', `${sender.rows[0].username} sent you a friend request`]
-        );
+        await createNotification(friendId, userId, 'friend_request', `${sender.rows[0].username} sent you a friend request`);
         res.status(200).json({ message: 'Friend request sent' });
     } catch (err) {
         console.error(err);
@@ -418,10 +616,7 @@ app.post('/api/friends/accept', async (req, res) => {
             ['accepted', id1, id2]
         );
         const sender = await pool.query('SELECT username FROM users WHERE id = $1', [userId]);
-        await pool.query(
-            'INSERT INTO notifications (user_id, sender_id, type, message) VALUES ($1, $2, $3, $4)',
-            [friendId, userId, 'friend_accept', `${sender.rows[0].username} accepted your friend request`]
-        );
+        await createNotification(friendId, userId, 'friend_accept', `${sender.rows[0].username} accepted your friend request`);
         res.status(200).json({ message: 'Friend request accepted' });
     } catch (err) {
         console.error(err);
@@ -445,6 +640,38 @@ app.post('/api/friends/reject', async (req, res) => {
     }
 });
 
+// Block a user
+app.post('/api/friends/block', async (req, res) => {
+    const { userId, blockId } = req.body;
+    const [id1, id2] = userId < blockId ? [userId, blockId] : [blockId, userId];
+    try {
+        await pool.query(
+            'INSERT INTO friends (user_id1, user_id2, action_user_id, status) VALUES ($1, $2, $3, $4) ON CONFLICT (user_id1, user_id2) DO UPDATE SET status = $4, action_user_id = $3',
+            [id1, id2, userId, 'blocked']
+        );
+        res.status(200).json({ message: 'User blocked' });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Failed to block user' });
+    }
+});
+
+// Unblock a user
+app.post('/api/friends/unblock', async (req, res) => {
+    const { userId, blockId } = req.body;
+    const [id1, id2] = userId < blockId ? [userId, blockId] : [blockId, userId];
+    try {
+        await pool.query(
+            'DELETE FROM friends WHERE user_id1 = $1 AND user_id2 = $2 AND action_user_id = $3 AND status = $4',
+            [id1, id2, userId, 'blocked']
+        );
+        res.status(200).json({ message: 'User unblocked' });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Failed to unblock user' });
+    }
+});
+
 // Search users and include friend status
 app.get('/api/users/search', async (req, res) => {
     const { q, currentUserId } = req.query;
@@ -455,13 +682,13 @@ app.get('/api/users/search', async (req, res) => {
                 u.id, u.username, u.profile_pic,
                 f.status as friend_status,
                 CASE 
-                    WHEN f.user_id1 = $2 THEN 'sent'
-                    WHEN f.user_id2 = $2 THEN 'received'
-                    ELSE null
+                    WHEN f.action_user_id = $2 THEN 'sent'
+                    ELSE 'received'
                 END as request_direction
             FROM users u
             LEFT JOIN friends f ON (f.user_id1 = LEAST(u.id, $2::int) AND f.user_id2 = GREATEST(u.id, $2::int))
             WHERE u.username ILIKE $1 AND u.id != $2
+            AND (f.status IS NULL OR f.status != 'blocked')
             LIMIT 20
         `, [`%${q}%`, currentUserId]);
         res.json(users.rows);
@@ -505,6 +732,7 @@ app.get('/api/friends/requests/:userId', async (req, res) => {
             )
             WHERE (friends.user_id1 = $1 OR friends.user_id2 = $1) 
             AND friends.status = 'pending'
+            AND friends.action_user_id != $1
             AND users.id != $1
         `, [userId]);
         res.json(requests.rows);
@@ -547,10 +775,7 @@ app.post('/api/posts/:id/share', async (req, res) => {
         const post = await pool.query('SELECT user_id FROM posts WHERE id = $1', [postId]);
         if (post.rows.length > 0 && post.rows[0].user_id !== userId) {
             const sender = await pool.query('SELECT username FROM users WHERE id = $1', [userId]);
-            await pool.query(
-                'INSERT INTO notifications (user_id, sender_id, type, message, reference_id) VALUES ($1, $2, $3, $4, $5)',
-                [post.rows[0].user_id, userId, 'share', `${sender.rows[0].username} shared your post`, postId]
-            );
+            await createNotification(post.rows[0].user_id, userId, 'share', `${sender.rows[0].username} shared your post`, postId);
         }
         res.status(200).json({ message: 'Shared' });
     } catch (err) {
@@ -732,10 +957,13 @@ app.post('/api/messages', async (req, res) => {
         );
         // Create notification for the receiver
         const sender = await pool.query('SELECT username FROM users WHERE id = $1', [senderId]);
-        await pool.query(
-            'INSERT INTO notifications (user_id, sender_id, type, message) VALUES ($1, $2, $3, $4)',
-            [receiverId, senderId, 'message', `${sender.rows[0].username} sent you a message`]
-        );
+        await createNotification(receiverId, senderId, 'message', `${sender.rows[0].username} sent you a message`);
+        
+        // Emit real-time message via WebSockets
+        const receiverSocketId = userSockets.get(Number(receiverId));
+        if (receiverSocketId) {
+            io.to(receiverSocketId).emit('message', newMsg.rows[0]);
+        }
         res.status(201).json({ message: 'Message sent!', data: newMsg.rows[0] });
     } catch (err) {
         console.error(err);
@@ -933,6 +1161,8 @@ app.delete('/api/users/:id', async (req, res) => {
 
 // Get posts for a specific user
 app.get('/api/users/:id/posts', async (req, res) => {
+    const viewerId = req.query.viewerId ? Number(req.query.viewerId) : 0;
+    const targetUserId = Number(req.params.id);
     try {
         const posts = await pool.query(`
             SELECT 
@@ -940,12 +1170,35 @@ app.get('/api/users/:id/posts', async (req, res) => {
                 users.username,
                 users.profile_pic,
                 (SELECT COUNT(*) FROM likes WHERE likes.post_id = posts.id) as likes_count,
-                (SELECT COUNT(*) FROM comments WHERE comments.post_id = posts.id) as comments_count
+                (SELECT COUNT(*) FROM comments WHERE comments.post_id = posts.id) as comments_count,
+                (SELECT reaction_type FROM likes WHERE likes.post_id = posts.id AND likes.user_id = $2) as viewer_reaction,
+                (
+                    SELECT json_object_agg(reaction_type, cnt) 
+                    FROM (
+                        SELECT reaction_type, COUNT(*) as cnt 
+                        FROM likes 
+                        WHERE likes.post_id = posts.id 
+                        GROUP BY reaction_type
+                    ) x
+                ) as reactions_summary
             FROM posts 
             JOIN users ON posts.user_id = users.id 
             WHERE posts.user_id = $1
+              AND (
+                  posts.privacy = 'public'
+                  OR posts.user_id = $2
+                  OR (posts.privacy = 'friends' AND EXISTS (
+                      SELECT 1 FROM friends 
+                      WHERE ((user_id1 = posts.user_id AND user_id2 = $2) OR (user_id1 = $2 AND user_id2 = posts.user_id))
+                        AND status = 'accepted'
+                  ))
+                  OR (posts.privacy = 'close_friends' AND EXISTS (
+                      SELECT 1 FROM close_friends
+                      WHERE user_id = posts.user_id AND friend_id = $2
+                  ))
+              )
             ORDER BY posts.created_at DESC
-        `, [req.params.id]);
+        `, [targetUserId, viewerId]);
         res.json(posts.rows);
     } catch (err) {
         console.error(err);
@@ -973,7 +1226,54 @@ app.get('/api/search', async (req, res) => {
     }
 });
 
+// ============================================================
+// --- Close Friends Routes ---
+// ============================================================
+
+// Get list of close friends for a user
+app.get('/api/users/:id/close-friends', async (req, res) => {
+    try {
+        const result = await pool.query(
+            'SELECT friend_id FROM close_friends WHERE user_id = $1',
+            [req.params.id]
+        );
+        res.json(result.rows.map(row => row.friend_id));
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Failed to fetch close friends' });
+    }
+});
+
+// Add a friend to close friends list
+app.post('/api/users/:id/close-friends', async (req, res) => {
+    const { friendId } = req.body;
+    try {
+        await pool.query(
+            'INSERT INTO close_friends (user_id, friend_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+            [req.params.id, friendId]
+        );
+        res.status(200).json({ message: 'Added to Close Friends' });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Failed to add close friend' });
+    }
+});
+
+// Remove a friend from close friends list
+app.delete('/api/users/:id/close-friends/:friendId', async (req, res) => {
+    try {
+        await pool.query(
+            'DELETE FROM close_friends WHERE user_id = $1 AND friend_id = $2',
+            [req.params.id, req.params.friendId]
+        );
+        res.status(200).json({ message: 'Removed from Close Friends' });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Failed to remove close friend' });
+    }
+});
+
 // Start the server
-app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+server.listen(PORT, () => {
+    console.log('Server running on port ' + PORT);
 });

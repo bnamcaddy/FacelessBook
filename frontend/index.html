@@ -8,6 +8,7 @@
     <link rel="stylesheet" href="style.css">
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
 </head>
 <body>
     <div id="app">
@@ -103,7 +104,15 @@
                             <span>Photo/Video</span>
                         </div>
                         <input type="file" id="post-media-input" hidden accept="image/*,video/*">
-                        <button id="create-post-btn" class="primary-btn">Post</button>
+                        <div style="display:flex; align-items:center;">
+                            <select id="post-privacy-select" class="post-privacy-select">
+                                <option value="public">🌎 Public</option>
+                                <option value="friends">👥 Friends</option>
+                                <option value="close_friends">⭐ Close Friends</option>
+                                <option value="only_me">🔒 Only Me</option>
+                            </select>
+                            <button id="create-post-btn" class="primary-btn" style="width:auto; padding:10px 24px;">Post</button>
+                        </div>
                     </div>
                 </div>
 
