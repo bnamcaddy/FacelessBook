@@ -59,6 +59,55 @@ function init(){
                 }
             }
         });
+
+        // Rich Chat - Read Receipt
+        socket.on('read-receipt', ({ messageId, time, readerId }) => {
+            if (page === 'messages.html' && activeChatUser === readerId) {
+                const msgEl = document.querySelector(`.chat-msg[data-id="${messageId}"]`);
+                if (msgEl) {
+                    let statusEl = msgEl.querySelector('.msg-read-status');
+                    if (!statusEl) {
+                        statusEl = document.createElement('div');
+                        statusEl.className = 'msg-read-status';
+                        statusEl.style = 'font-size: 0.7rem; color: var(--primary); text-align: right; margin-top: 4px;';
+                        msgEl.appendChild(statusEl);
+                    }
+                    const readTime = new Date(time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+                    statusEl.innerText = `Seen ${readTime}`;
+                }
+            }
+        });
+
+        // WebRTC Signaling
+        socket.on('call-made', async (data) => {
+            document.getElementById('incoming-call-overlay').style.display = 'flex';
+            document.getElementById('incoming-caller-name').innerText = `Incoming ${data.isVideo ? 'Video' : 'Audio'} Call`;
+            
+            document.getElementById('accept-call-btn').onclick = () => acceptCall(data.offer, data.callerId, data.isVideo);
+            document.getElementById('reject-call-btn').onclick = () => {
+                document.getElementById('incoming-call-overlay').style.display = 'none';
+                socket.emit('call-rejected', { to: data.socket });
+            };
+        });
+
+        socket.on('answer-made', async (data) => {
+            document.getElementById('call-status').innerText = 'Connected';
+            await peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
+        });
+
+        socket.on('ice-candidate-received', async (candidate) => {
+            try { await peerConnection.addIceCandidate(candidate); } catch(e) {}
+        });
+
+        socket.on('call-ended', () => {
+            closeCallUI();
+            showNotification('Call ended');
+        });
+
+        socket.on('call-rejected', () => {
+            closeCallUI();
+            showNotification('Call declined');
+        });
     }
     
     const navName = document.getElementById('nav-username');
@@ -224,7 +273,11 @@ function openModal(type){
             <button class="primary-btn" onclick="submitPost()" style="width:auto; padding:8px 24px;">Post</button>
         </div>
     `;
-    else if(type==='story')body.innerHTML=`<textarea id="m-content" placeholder="Share your story..." style="height:80px;"></textarea><input id="m-image" placeholder="Image URL (optional)"><button class="primary-btn" onclick="submitStory()">Share Story</button>`;
+    else if(type==='story') body.innerHTML=`
+        <textarea id="m-content" placeholder="Share your story..." style="height:80px;"></textarea>
+        <input type="file" id="m-story-media" accept="image/*,video/*" style="margin-top:8px;">
+        <button class="primary-btn" onclick="submitStory()">Share Story</button>
+    `;
     else if(type==='reel')body.innerHTML=`<input id="m-video" placeholder="Video URL"><textarea id="m-caption" placeholder="Caption..." style="height:80px;"></textarea><button class="primary-btn" onclick="submitReel()">Post Reel</button>`;
     else if(type==='note')body.innerHTML=`<textarea id="m-content" placeholder="Write a note..." style="height:100px;"></textarea><button class="primary-btn" onclick="submitNote()">Save Note</button>`;
     else if(type==='marketplace')body.innerHTML=`<input id="m-name" placeholder="Item Name"><textarea id="m-desc" placeholder="Description..." style="height:80px;"></textarea><input id="m-price" type="number" step="0.01" placeholder="Price"><input id="m-image" placeholder="Image URL (optional)"><select id="m-cat"><option>General</option><option>Electronics</option><option>Clothing</option><option>Furniture</option><option>Vehicles</option><option>Other</option></select><button class="primary-btn" onclick="submitMarketItem()">List Item</button>`;
@@ -240,12 +293,113 @@ async function submitPost(){
     try{const r=await fetch(`${API_URL}/posts`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({userId:currentUser.id,content:c.value,privacy:privacy})});
     if(r.ok){showNotification('Post created!');closeModal();if(page==='index.html'||page==='')fetchPosts();}else throw new Error();}catch(e){showNotification('Failed to create post','error');}
 }
-async function submitStory(){
-    const c=document.getElementById('m-content');const img=document.getElementById('m-image');
-    if(!c||!c.value.trim()){showNotification('Write something!','error');return;}
-    try{const r=await fetch(`${API_URL}/stories`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({userId:currentUser.id,content:c.value,imageUrl:img?img.value:null})});
-    if(r.ok){showNotification('Story shared!');closeModal();fetchStories();}else throw new Error();}catch(e){showNotification('Failed','error');}
+
+// Updated fetchStories to render circular story thumbnails with click handler
+async function fetchStories(){
+    const bar=document.getElementById('stories-bar');if(!bar)return;
+    try{
+        const r=await fetch(`${API_URL}/stories`);
+        const stories=await r.json();
+        if(!stories.length){
+            bar.innerHTML='<div class="empty-state" style="padding:20px;">No stories yet</div>';
+            return;
+        }
+        // Render each story card
+        bar.innerHTML=stories.map(s=>`\
+            <div class=\"story-card\" onclick=\"openStory(${s.id})\">\
+                <div class=\"story-avatar\" style=\"background-image:url(${s.profile_pic||'https://via.placeholder.com/40'});\"></div>\
+                <div class=\"story-user\">${s.username}</div>\
+            </div>`).join('');
+    }catch(e){
+        console.error(e);
+        bar.innerHTML='';
+    }
 }
+
+// Updated submitStory to handle file upload before posting story
+async function submitStory(){
+    const c=document.getElementById('m-content');
+    const fileInput=document.getElementById('m-story-media');
+    if(!c||!c.value.trim()){
+        showNotification('Write something!','error');
+        return;
+    }
+    try{
+        let imageUrl=null;
+        if(fileInput && fileInput.files.length>0){
+            const formData=new FormData();
+            formData.append('file', fileInput.files[0]);
+            const uploadRes=await fetch(`${API_URL}/upload`,{method:'POST',body:formData});
+            const uploadData=await uploadRes.json();
+            if(uploadRes.ok){
+                imageUrl=uploadData.url;
+            }else{
+                throw new Error(uploadData.error||'Upload failed');
+            }
+        }
+        const r=await fetch(`${API_URL}/stories`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({userId:currentUser.id,content:c.value,imageUrl})});
+        if(r.ok){
+            showNotification('Story shared!');
+            closeModal();
+            fetchStories();
+        }else throw new Error();
+    }catch(e){
+        showNotification('Failed to share story','error');
+    }
+}
+
+// Story viewer logic
+let storyTimer=null;
+function openStory(storyId){
+    // Fetch story details
+    fetch(`${API_URL}/stories/${storyId}`)
+    .then(res=>res.json())
+    .then(story=>{
+        const title=document.getElementById('story-viewer-title');
+        const mediaContainer=document.getElementById('story-media');
+        const progress=document.getElementById('story-progress');
+        if(title) title.textContent=story.username||'Story';
+        // Determine media type
+        if(story.image_url){
+            if(story.image_url.match(/\.(mp4|webm|ogg)$/i)){
+                mediaContainer.innerHTML=`<video src="${story.image_url}" autoplay muted style="max-width:100%; max-height:100%;"></video>`;
+            }else{
+                mediaContainer.innerHTML=`<img src="${story.image_url}" style="max-width:100%; max-height:100%; object-fit:contain;"/>`;
+            }
+        }else{
+            mediaContainer.innerHTML='';
+        }
+        // Show viewer
+        const viewer=document.getElementById('story-viewer');
+        if(viewer) viewer.style.display='flex';
+        // Start progress bar animation (5 seconds)
+        if(progress){
+            progress.style.transition='none';
+            progress.style.width='0%';
+            // Force reflow
+            void progress.offsetWidth;
+            progress.style.transition='width 5s linear';
+            progress.style.width='100%';
+        }
+        // Auto close after duration
+        clearTimeout(storyTimer);
+        storyTimer=setTimeout(()=>{closeStoryViewer();},5000);
+    })
+    .catch(err=>{console.error(err);});
+}
+function closeStoryViewer(){
+    const viewer=document.getElementById('story-viewer');
+    if(viewer) viewer.style.display='none';
+    const media=document.getElementById('story-media');
+    if(media) media.innerHTML='';
+    const progress=document.getElementById('story-progress');
+    if(progress){
+        progress.style.transition='none';
+        progress.style.width='0%';
+    }
+    clearTimeout(storyTimer);
+}
+
 async function submitReel(){
     const v=document.getElementById('m-video');const c=document.getElementById('m-caption');
     try{const r=await fetch(`${API_URL}/reels`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({userId:currentUser.id,videoUrl:v?v.value:null,caption:c?c.value:''})});
@@ -808,68 +962,348 @@ async function loadConversations(){
     }catch(e){c.innerHTML='<p style="padding:16px;color:var(--text-muted);">Could not load chats.</p>';}
 }
 
+// WebRTC and Media Logic Variables
+let localStream = null;
+let peerConnection = null;
+const configuration = { 'iceServers': [{'urls': 'stun:stun.l.google.com:19302'}] };
+
+function renderMessageHtml(m) {
+    let contentHtml = `<div>${m.content}</div>`;
+    if (m.message_type === 'voice' && m.media_url) {
+        contentHtml = `<audio src="${m.media_url}" controls style="max-width: 200px; height: 30px;"></audio>`;
+    } else if (m.message_type === 'location' && m.media_url) {
+        contentHtml = `<a href="${m.media_url}" target="_blank" style="color:#3498db; text-decoration:none; font-weight:bold;"><i class="fas fa-map-marker-alt"></i> Location</a>`;
+    } else if (m.message_type === 'gif' && m.media_url) {
+        contentHtml = `<img src="${m.media_url}" style="max-width:200px; border-radius:8px;">`;
+    } else if (m.message_type === 'call_log') {
+        contentHtml = `<div style="color:var(--text-muted); font-style:italic;"><i class="fas fa-phone"></i> ${m.content}</div>`;
+    }
+
+    let readStatus = '';
+    if (m.sender_id === currentUser.id && m.is_read) {
+        const readTime = m.read_at ? new Date(m.read_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '';
+        readStatus = `<div class="msg-read-status" style="font-size: 0.7rem; color: var(--primary); text-align: right; margin-top: 4px;">Seen ${readTime}</div>`;
+    }
+
+    return `<div class="chat-msg ${m.sender_id===currentUser.id?'sent':'received'}" data-id="${m.id}">
+                ${contentHtml}
+                <div class="msg-time">${timeAgo(m.created_at)}</div>
+                ${readStatus}
+            </div>`;
+}
+
 async function openChat(otherId){
     activeChatUser=otherId;
     const area=document.getElementById('chat-area');if(!area)return;
-    // Get username
     let username='User';
     try{const r=await fetch(`${API_URL}/users`);const users=await r.json();const u=users.find(x=>x.id===otherId);if(u)username=u.username;}catch(e){}
-    // Get messages
     let msgs=[];
     try{const r=await fetch(`${API_URL}/messages/${currentUser.id}/${otherId}`);msgs=await r.json();}catch(e){}
-    area.innerHTML=`<div class="chat-header">${username}</div><div class="chat-messages" id="chat-msgs">${msgs.map(m=>`<div class="chat-msg ${m.sender_id===currentUser.id?'sent':'received'}"><div>${m.content}</div><div class="msg-time">${timeAgo(m.created_at)}</div></div>`).join('')}</div><div class="chat-input"><input type="text" id="chat-input" placeholder="Type a message..."><button class="primary-btn" onclick="sendMessage(${otherId})">Send</button></div>`;
+    area.innerHTML=`
+        <div class="chat-header" style="display:flex; justify-content:space-between; align-items:center;">
+            <div>${username}</div>
+            <div style="display:flex; gap:8px;">
+                <button class="nav-icon-btn" onclick="startCall(${otherId}, false)" title="Audio Call"><i class="fas fa-phone"></i></button>
+                <button class="nav-icon-btn" onclick="startCall(${otherId}, true)" title="Video Call"><i class="fas fa-video"></i></button>
+            </div>
+        </div>
+        <div class="chat-messages" id="chat-msgs" onscroll="handleChatScroll(${otherId})">
+            ${msgs.map(renderMessageHtml).join('')}
+        </div>
+        <div class="chat-input" style="display:flex; gap:8px; align-items:center;">
+            <button class="nav-icon-btn" onclick="document.getElementById('gif-modal').style.display='flex'" title="Send GIF"><i class="fas fa-gift"></i></button>
+            <button class="nav-icon-btn" onclick="sendLocation(${otherId})" title="Send Location"><i class="fas fa-map-marker-alt"></i></button>
+            <input type="text" id="chat-input" placeholder="Type a message..." style="flex:1;">
+            <button class="nav-icon-btn" id="voice-record-btn" onmousedown="startVoiceRecord()" onmouseup="stopVoiceRecord(${otherId})" title="Hold to record voice"><i class="fas fa-microphone"></i></button>
+            <button class="primary-btn" onclick="sendTextMessage(${otherId})">Send</button>
+        </div>
+    `;
     const msgsDiv=document.getElementById('chat-msgs');if(msgsDiv)msgsDiv.scrollTop=msgsDiv.scrollHeight;
     
-    // Add keypress and typing indicator listeners
     const inp=document.getElementById('chat-input');
     let typingTimeout = null;
     if(inp){
         inp.addEventListener('input', () => {
             if (socket) {
                 socket.emit('typing', { senderId: currentUser.id, receiverId: otherId, isTyping: true });
-                
                 clearTimeout(typingTimeout);
                 typingTimeout = setTimeout(() => {
                     socket.emit('typing', { senderId: currentUser.id, receiverId: otherId, isTyping: false });
                 }, 2000);
             }
         });
-        inp.addEventListener('keypress',e=>{if(e.key==='Enter')sendMessage(otherId);});
+        inp.addEventListener('keypress',e=>{if(e.key==='Enter')sendTextMessage(otherId);});
     }
     loadConversations();
+    setTimeout(() => handleChatScroll(otherId), 100);
 }
 
-async function sendMessage(receiverId){
+async function sendTextMessage(receiverId) {
     const inp=document.getElementById('chat-input');if(!inp||!inp.value.trim())return;
-    try{
-        if (socket) {
-            socket.emit('typing', { senderId: currentUser.id, receiverId, isTyping: false });
-        }
-        const r=await fetch(`${API_URL}/messages`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({senderId:currentUser.id,receiverId,content:inp.value})});
+    await sendApiMessage(receiverId, inp.value, 'text', null);
+    inp.value='';
+}
+
+async function sendGif(url) {
+    document.getElementById('gif-modal').style.display='none';
+    if(activeChatUser) await sendApiMessage(activeChatUser, 'Sent a GIF', 'gif', url);
+}
+
+async function sendLocation(receiverId) {
+    if ("geolocation" in navigator) {
+        navigator.geolocation.getCurrentPosition(async (position) => {
+            const lat = position.coords.latitude;
+            const lng = position.coords.longitude;
+            const url = `https://www.google.com/maps?q=${lat},${lng}`;
+            await sendApiMessage(receiverId, 'Shared a location', 'location', url);
+        }, (err) => {
+            showNotification('Location access denied', 'error');
+        });
+    } else {
+        showNotification('Geolocation not supported', 'error');
+    }
+}
+
+let mediaRecorder;
+let audioChunks = [];
+
+async function startVoiceRecord() {
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaRecorder = new MediaRecorder(stream);
+        audioChunks = [];
+        mediaRecorder.ondataavailable = e => { if(e.data.size > 0) audioChunks.push(e.data); };
+        mediaRecorder.start();
+        document.getElementById('voice-record-btn').style.color = 'red';
+    } catch(err) {
+        showNotification('Microphone access denied', 'error');
+    }
+}
+
+async function stopVoiceRecord(receiverId) {
+    if(mediaRecorder && mediaRecorder.state !== 'inactive') {
+        mediaRecorder.stop();
+        document.getElementById('voice-record-btn').style.color = '';
+        mediaRecorder.onstop = async () => {
+            const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+            const formData = new FormData();
+            formData.append('file', audioBlob, 'voicememo.webm');
+            try {
+                const uploadRes = await fetch(`${API_URL}/upload`, { method: 'POST', body: formData });
+                const uploadData = await uploadRes.json();
+                if (uploadRes.ok) {
+                    await sendApiMessage(receiverId, 'Voice message', 'voice', uploadData.url);
+                }
+            } catch(e) {
+                showNotification('Failed to send voice memo', 'error');
+            }
+        };
+    }
+}
+
+async function sendApiMessage(receiverId, content, messageType, mediaUrl) {
+    try {
+        if (socket) socket.emit('typing', { senderId: currentUser.id, receiverId, isTyping: false });
+        const r=await fetch(`${API_URL}/messages`,{
+            method:'POST',
+            headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({senderId:currentUser.id, receiverId, content, messageType, mediaUrl})
+        });
         if(r.ok){
-            inp.value='';
-            openChat(receiverId);
-        } else {
-            const errData = await r.json();
-            throw new Error(errData.error || 'Failed to send');
-        }
+            const data = await r.json();
+            appendRealtimeMessage(data.data);
+            loadConversations();
+        } else throw new Error();
     }catch(e){
-        showNotification(e.message || 'Failed to send','error');
+        showNotification('Failed to send','error');
+    }
+}
+
+function handleChatScroll(otherId) {
+    const msgsDiv=document.getElementById('chat-msgs');
+    if(!msgsDiv)return;
+    if (msgsDiv.scrollHeight - msgsDiv.scrollTop <= msgsDiv.clientHeight + 50) {
+        const unreadMsgs = Array.from(msgsDiv.querySelectorAll('.chat-msg.received:not(.read-acked)'));
+        if (unreadMsgs.length > 0) {
+            unreadMsgs.forEach(msg => {
+                msg.classList.add('read-acked');
+                const msgId = msg.getAttribute('data-id');
+                if (msgId) {
+                    fetch(`${API_URL}/messages/${msgId}/read-exact`, {method:'PUT'})
+                        .then(r => r.json())
+                        .then(data => {
+                            if(socket && data.read_at) {
+                                socket.emit('read-receipt', {
+                                    senderId: currentUser.id,
+                                    receiverId: otherId,
+                                    messageId: msgId,
+                                    time: data.read_at
+                                });
+                            }
+                        });
+                }
+            });
+            fetch(`${API_URL}/messages/${currentUser.id}/${otherId}`);
+        }
     }
 }
 
 function appendRealtimeMessage(msg) {
     const msgsDiv = document.getElementById('chat-msgs');
     if (!msgsDiv) return;
-    const msgEl = document.createElement('div');
-    msgEl.className = `chat-msg received`;
-    msgEl.innerHTML = `<div>${msg.content}</div><div class="msg-time">just now</div>`;
+    const wrapper = document.createElement('div');
+    wrapper.innerHTML = renderMessageHtml(msg);
+    const msgEl = wrapper.firstElementChild;
     msgsDiv.appendChild(msgEl);
     msgsDiv.scrollTop = msgsDiv.scrollHeight;
-    
-    // Read acknowledge to clear database unread counts
-    fetch(`${API_URL}/messages/${currentUser.id}/${msg.sender_id}`);
+    handleChatScroll(activeChatUser);
 }
+
+// Call state variables for muting and switching camera
+let currentFacingMode = 'user';
+
+function resetCallButtons() {
+    const aBtn = document.getElementById('mute-audio-btn');
+    if(aBtn) { aBtn.innerHTML = '<i class="fas fa-microphone"></i>'; aBtn.style.background = '#333'; }
+    const vBtn = document.getElementById('mute-video-btn');
+    if(vBtn) { vBtn.innerHTML = '<i class="fas fa-video"></i>'; vBtn.style.background = '#333'; }
+    currentFacingMode = 'user';
+}
+
+function toggleAudio() {
+    if (localStream) {
+        const audioTrack = localStream.getAudioTracks()[0];
+        if (audioTrack) {
+            audioTrack.enabled = !audioTrack.enabled;
+            const btn = document.getElementById('mute-audio-btn');
+            if (btn) {
+                btn.innerHTML = audioTrack.enabled ? '<i class="fas fa-microphone"></i>' : '<i class="fas fa-microphone-slash"></i>';
+                btn.style.background = audioTrack.enabled ? '#333' : '#e74c3c';
+            }
+        }
+    }
+}
+
+function toggleVideo() {
+    if (localStream) {
+        const videoTrack = localStream.getVideoTracks()[0];
+        if (videoTrack) {
+            videoTrack.enabled = !videoTrack.enabled;
+            const btn = document.getElementById('mute-video-btn');
+            if (btn) {
+                btn.innerHTML = videoTrack.enabled ? '<i class="fas fa-video"></i>' : '<i class="fas fa-video-slash"></i>';
+                btn.style.background = videoTrack.enabled ? '#333' : '#e74c3c';
+            }
+        }
+    }
+}
+
+async function switchCamera() {
+    if (localStream && peerConnection) {
+        currentFacingMode = currentFacingMode === 'user' ? 'environment' : 'user';
+        try {
+            const videoTrack = localStream.getVideoTracks()[0];
+            if (videoTrack) videoTrack.stop();
+
+            const newStream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: currentFacingMode },
+                audio: false
+            });
+            const newVideoTrack = newStream.getVideoTracks()[0];
+
+            localStream.removeTrack(videoTrack);
+            localStream.addTrack(newVideoTrack);
+            const localVideo = document.getElementById('local-video');
+            if (localVideo) localVideo.srcObject = localStream;
+
+            const sender = peerConnection.getSenders().find(s => s.track && s.track.kind === 'video');
+            if (sender) await sender.replaceTrack(newVideoTrack);
+        } catch(e) {
+            showNotification('Failed to switch camera', 'error');
+            currentFacingMode = currentFacingMode === 'user' ? 'environment' : 'user';
+        }
+    }
+}
+
+// WebRTC Call Logic
+async function startCall(otherId, isVideo) {
+    document.getElementById('call-modal').style.display = 'flex';
+    document.getElementById('call-status').innerText = 'Calling...';
+    resetCallButtons();
+    try {
+        localStream = await navigator.mediaDevices.getUserMedia({ video: isVideo, audio: true });
+        const localVideo = document.getElementById('local-video');
+        localVideo.srcObject = localStream;
+        peerConnection = new RTCPeerConnection(configuration);
+        localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+        peerConnection.ontrack = e => {
+            const remoteVideo = document.getElementById('remote-video');
+            if (remoteVideo.srcObject !== e.streams[0]) remoteVideo.srcObject = e.streams[0];
+        };
+        peerConnection.onicecandidate = e => {
+            if (e.candidate) socket.emit('ice-candidate', { to: otherId, candidate: e.candidate });
+        };
+        const offer = await peerConnection.createOffer();
+        await peerConnection.setLocalDescription(offer);
+        socket.emit('call-user', { userToCall: otherId, callerId: currentUser.id, offer: offer, isVideo: isVideo });
+        await sendApiMessage(otherId, `Started a ${isVideo ? 'video' : 'audio'} call`, 'call_log', null);
+    } catch(e) {
+        showNotification('Could not access media devices', 'error');
+        closeCallUI();
+    }
+}
+
+async function acceptCall(offer, callerId, isVideo) {
+    document.getElementById('incoming-call-overlay').style.display = 'none';
+    document.getElementById('call-modal').style.display = 'flex';
+    document.getElementById('call-status').innerText = 'Connected';
+    resetCallButtons();
+    try {
+        localStream = await navigator.mediaDevices.getUserMedia({ video: isVideo, audio: true });
+        const localVideo = document.getElementById('local-video');
+        localVideo.srcObject = localStream;
+        peerConnection = new RTCPeerConnection(configuration);
+        localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+        peerConnection.ontrack = e => { document.getElementById('remote-video').srcObject = e.streams[0]; };
+        peerConnection.onicecandidate = e => {
+            if (e.candidate) socket.emit('ice-candidate', { to: callerId, candidate: e.candidate });
+        };
+        await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+        const answer = await peerConnection.createAnswer();
+        await peerConnection.setLocalDescription(answer);
+        socket.emit('make-answer', { answer: answer, to: callerId });
+    } catch(e) {
+        showNotification('Could not access media devices', 'error');
+        closeCallUI();
+    }
+}
+
+function closeCallUI() {
+    if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
+    if (peerConnection) { peerConnection.close(); peerConnection = null; }
+    document.getElementById('call-modal').style.display = 'none';
+    document.getElementById('local-video').srcObject = null;
+    document.getElementById('remote-video').srcObject = null;
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    const endBtn = document.getElementById('end-call-btn');
+    if (endBtn) {
+        endBtn.onclick = () => {
+            if(activeChatUser) socket.emit('end-call', { to: activeChatUser });
+            closeCallUI();
+        };
+    }
+
+    const muteAudioBtn = document.getElementById('mute-audio-btn');
+    if (muteAudioBtn) muteAudioBtn.onclick = toggleAudio;
+
+    const muteVideoBtn = document.getElementById('mute-video-btn');
+    if (muteVideoBtn) muteVideoBtn.onclick = toggleVideo;
+
+    const switchCameraBtn = document.getElementById('switch-camera-btn');
+    if (switchCameraBtn) switchCameraBtn.onclick = switchCamera;
+});
 
 // ===== REELS PAGE =====
 async function initReels(){

@@ -41,6 +41,50 @@ io.on('connection', (socket) => {
             io.to(receiverSocketId).emit('typing', { senderId, isTyping });
         }
     });
+
+    // WebRTC Signaling
+    socket.on('call-user', (data) => {
+        const receiverSocketId = userSockets.get(Number(data.userToCall));
+        if (receiverSocketId) {
+            io.to(receiverSocketId).emit('call-made', {
+                offer: data.offer,
+                socket: socket.id,
+                callerId: data.callerId,
+                isVideo: data.isVideo
+            });
+        }
+    });
+
+    socket.on('make-answer', (data) => {
+        io.to(data.to).emit('answer-made', {
+            socket: socket.id,
+            answer: data.answer
+        });
+    });
+
+    socket.on('ice-candidate', (data) => {
+        io.to(data.to).emit('ice-candidate-received', data.candidate);
+    });
+
+    socket.on('end-call', (data) => {
+        if (data.to) {
+            io.to(data.to).emit('call-ended');
+        }
+    });
+
+    socket.on('call-rejected', (data) => {
+        if (data.to) {
+            io.to(data.to).emit('call-rejected');
+        }
+    });
+
+    // Read Receipt
+    socket.on('read-receipt', ({ senderId, receiverId, messageId, time }) => {
+        const receiverSocketId = userSockets.get(Number(receiverId));
+        if (receiverSocketId) {
+            io.to(receiverSocketId).emit('read-receipt', { messageId, time, readerId: senderId });
+        }
+    });
     
     socket.on('disconnect', () => {
         for (let [userId, socketId] of userSockets.entries()) {
@@ -207,6 +251,22 @@ pool.connect(async (err, client, release) => {
             
             await client.query('ALTER TABLE friends ADD COLUMN IF NOT EXISTS action_user_id INTEGER REFERENCES users(id) ON DELETE CASCADE');
             await client.query('ALTER TABLE messages ADD COLUMN IF NOT EXISTS is_read BOOLEAN DEFAULT FALSE');
+
+            // New Advanced Messaging Migrations
+            await client.query('ALTER TABLE messages ADD COLUMN IF NOT EXISTS message_type VARCHAR(20) DEFAULT \'text\'');
+            await client.query('ALTER TABLE messages ADD COLUMN IF NOT EXISTS media_url TEXT');
+            await client.query('ALTER TABLE messages ADD COLUMN IF NOT EXISTS read_at TIMESTAMP');
+            await client.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS is_bot BOOLEAN DEFAULT FALSE');
+            
+            await client.query(`
+                CREATE TABLE IF NOT EXISTS bot_responses (
+                    id SERIAL PRIMARY KEY,
+                    bot_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+                    keyword VARCHAR(100) NOT NULL,
+                    response_text TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+            `);
 
             // Reactions migrations
             await client.query('ALTER TABLE likes ADD COLUMN IF NOT EXISTS reaction_type VARCHAR(20) DEFAULT \'like\'');
@@ -795,6 +855,10 @@ app.post('/api/stories', async (req, res) => {
             'INSERT INTO stories (user_id, content, image_url) VALUES ($1, $2, $3) RETURNING *',
             [userId, content, imageUrl || null]
         );
+        // Emit new story event to all connected clients
+        if (socket) {
+            socket.emit('new-story', newStory.rows[0]);
+        }
         res.status(201).json({ message: 'Story created!', story: newStory.rows[0] });
     } catch (err) {
         console.error(err);
@@ -949,25 +1013,75 @@ app.put('/api/notifications/:userId/read-all', async (req, res) => {
 
 // Send a message
 app.post('/api/messages', async (req, res) => {
-    const { senderId, receiverId, content } = req.body;
+    const { senderId, receiverId, content, messageType, mediaUrl } = req.body;
+    const mType = messageType || 'text';
     try {
         const newMsg = await pool.query(
-            'INSERT INTO messages (sender_id, receiver_id, content) VALUES ($1, $2, $3) RETURNING *',
-            [senderId, receiverId, content]
+            'INSERT INTO messages (sender_id, receiver_id, content, message_type, media_url) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+            [senderId, receiverId, content, mType, mediaUrl || null]
         );
         // Create notification for the receiver
         const sender = await pool.query('SELECT username FROM users WHERE id = $1', [senderId]);
-        await createNotification(receiverId, senderId, 'message', `${sender.rows[0].username} sent you a message`);
+        if (mType !== 'call_log') {
+            await createNotification(receiverId, senderId, 'message', `${sender.rows[0].username} sent you a message`);
+        }
         
         // Emit real-time message via WebSockets
         const receiverSocketId = userSockets.get(Number(receiverId));
         if (receiverSocketId) {
             io.to(receiverSocketId).emit('message', newMsg.rows[0]);
         }
+
+        // Check if receiver is a bot
+        const receiver = await pool.query('SELECT is_bot FROM users WHERE id = $1', [receiverId]);
+        if (receiver.rows.length > 0 && receiver.rows[0].is_bot && mType === 'text') {
+            // Find bot response
+            const responses = await pool.query('SELECT * FROM bot_responses WHERE bot_id = $1', [receiverId]);
+            let replyText = "I'm an automated assistant. Could you rephrase your question?";
+            for (let row of responses.rows) {
+                if (content.toLowerCase().includes(row.keyword.toLowerCase())) {
+                    replyText = row.response_text;
+                    break;
+                }
+            }
+            
+            // Send auto-reply after 1.5 seconds
+            setTimeout(async () => {
+                try {
+                    const botReply = await pool.query(
+                        'INSERT INTO messages (sender_id, receiver_id, content, message_type) VALUES ($1, $2, $3, $4) RETURNING *',
+                        [receiverId, senderId, replyText, 'text']
+                    );
+                    const senderSocketId = userSockets.get(Number(senderId));
+                    if (senderSocketId) {
+                        io.to(senderSocketId).emit('message', botReply.rows[0]);
+                    }
+                    await createNotification(senderId, receiverId, 'message', `Bot replied to you`);
+                } catch(e) {
+                    console.error("Bot reply error", e);
+                }
+            }, 1500);
+        }
+
         res.status(201).json({ message: 'Message sent!', data: newMsg.rows[0] });
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Failed to send message' });
+    }
+});
+
+// Mark message as read with exact timestamp
+app.put('/api/messages/:id/read-exact', async (req, res) => {
+    try {
+        const time = new Date();
+        const result = await pool.query(
+            'UPDATE messages SET is_read = TRUE, read_at = $1 WHERE id = $2 AND is_read = FALSE RETURNING *',
+            [time, req.params.id]
+        );
+        res.json({ message: 'Message marked as read', read_at: time });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Failed to update message' });
     }
 });
 
@@ -1274,6 +1388,27 @@ app.delete('/api/users/:id/close-friends/:friendId', async (req, res) => {
 });
 
 // Start the server
+const fs = require('fs');
+// ... existing requires ...
+// Start cleanup job for expired stories (runs every hour)
+setInterval(async () => {
+    try {
+        const result = await pool.query('SELECT id, image_url FROM stories WHERE expires_at <= NOW()');
+        for (const row of result.rows) {
+            if (row.image_url) {
+                const filePath = `uploads/${row.image_url}`; // assuming image_url is filename
+                fs.unlink(filePath, err => {
+                    if (err) console.error('Failed to delete expired story file', err);
+                });
+            }
+        }
+        await pool.query('DELETE FROM stories WHERE expires_at <= NOW()');
+        console.log('Expired stories cleaned up');
+    } catch (e) {
+        console.error('Error during story cleanup', e);
+    }
+}, 60 * 60 * 1000); // every hour
+
 server.listen(PORT, () => {
     console.log('Server running on port ' + PORT);
 });

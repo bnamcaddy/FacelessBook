@@ -147,6 +147,19 @@
                 <div class="modal-body" id="modal-body"></div>
             </div>
         </div>
+        <!-- Story Viewer Modal -->
+        <div class="modal-overlay" id="story-viewer" style="display:none;">
+            <div class="modal">
+                <div class="modal-header">
+                    <h2 id="story-viewer-title">Story</h2>
+                    <button class="modal-close" onclick="closeStoryViewer()">&times;</button>
+                </div>
+                <div class="modal-body" id="story-viewer-body" style="position:relative; overflow:hidden;">
+                    <div id="story-media" style="width:100%; height:100%; display:flex; align-items:center; justify-content:center;"></div>
+                    <div id="story-progress" style="position:absolute; top:0; left:0; height:4px; background:var(--primary-light);"></div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script src="main.js"></script>
